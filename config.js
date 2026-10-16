@@ -5,7 +5,7 @@ window.TEMBR_CONFIG = {
   // Firebase → Project settings → General → Your apps → Web app → firebaseConfig
   firebase: {
     apiKey: "AIzaSyDAXeAx0efTsNgWfZuavDcq4-0c6etNGRY",
-    authDomain: ""music-player-a5e03.firebaseapp.com",
+    authDomain: "music-player-a5e03.firebaseapp.com",
     projectId: "music-player-a5e03",
     appId: "1:1023064214229:web:706b4a106972e2757c705c"
   },
