@@ -5,7 +5,7 @@
   const C = window.TEMBR_CONFIG || {};
   const fbc = C.firebase || {};
   const configured = !!(fbc.apiKey && fbc.projectId && fbc.appId && C.googleClientId);
-  const Store = configured ? window.CloudStore : window.DemoStore;
+  const Store = window.CloudStore;
   const esc = window.U.esc;
   const fmt = window.U.fmt;
   const hash = window.U.hash;
@@ -29,8 +29,6 @@
   let loadTok = 0;
   let pos = 0;
   let dur = 0;
-  let sim = false;          // імітація відтворення (демо-треки без звуку)
-  let simTimer = null;
   let shuffle = false;
   let repeat = 'off';       // off | all | one
   let query = '';
@@ -53,14 +51,23 @@
     el.textContent = msg;
     el.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove('show'), 4500);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 5500);
   }
 
   function errText(e) {
     const m = String((e && e.message) || e || '');
-    if (/popup_closed|popup_failed|access_denied|user_cancel|no_token/i.test(m)) {
-      return 'Доступ до Google не надано (вікно закрито або заблоковане). Спробуйте ще раз.';
+    const code = e && e.code ? String(e.code) : '';
+    if (code === 'auth/unauthorized-domain') return 'Адресу сайту не додано в Firebase → Authentication → Settings → Authorized domains.';
+    if (code === 'auth/operation-not-allowed') return 'У Firebase не ввімкнено вхід через Google (Authentication → Sign-in method).';
+    if (code === 'auth/invalid-credential' || code === 'auth/invalid-idp-response' || code === 'auth/internal-error') {
+      return 'Firebase не прийняв вхід через Google. Перевірте, що googleClientId у config.js — це «Web client (auto created by Google Service)» того самого проєкту.';
     }
+    if (code === 'auth/network-request-failed') return 'Немає з’єднання з мережею.';
+    if (code === 'permission-denied') return 'Firestore відхилив запит. Перевірте правила бази (README, крок 1.4).';
+    if (/popup_failed_to_open/i.test(m)) return 'Браузер заблокував вікно Google. Дозвольте спливні вікна для цього сайту й натисніть ще раз.';
+    if (/popup_closed|user_cancel/i.test(m)) return 'Вікно Google закрито до завершення входу.';
+    if (/access_denied/i.test(m)) return 'Доступ до Google Диска не надано.';
+    if (/no_token/i.test(m)) return 'Потрібно відновити доступ до Google Диска: натисніть ▶ ще раз.';
     if (e && e.status === 404) return 'Файл не знайдено на Google Диску (можливо, його видалили).';
     if (e && (e.status === 401 || e.status === 403)) {
       return 'Немає доступу до Google Диска' + (e.detail ? ': ' + e.detail : '') + '.';
@@ -75,7 +82,7 @@
 
   function coverCss(t) {
     if (t.cover) return "center / cover no-repeat url('" + t.cover + "')";
-    const i = t.ci != null ? t.ci : hash(String(t.id));
+    const i = hash(String(t.id));
     const p = PAL[i % PAL.length];
     return 'linear-gradient(135deg,' + p[0] + ',' + p[1] + ')';
   }
@@ -98,22 +105,19 @@
   }
 
   function blankHtml() {
-    const demo = Store.mode === 'demo';
     return '<div class="blank"><svg class="ic"><use href="#i-music"/></svg><h3>Бібліотека порожня</h3>' +
-      '<p>' + (demo
-        ? 'Додайте аудіофайли, щоб спробувати інтерфейс. У демо-режимі вони зберігаються лише до оновлення сторінки.'
-        : 'Завантажте музику: файли збережуться на вашому Google Диску, а список треків у Firebase.') + '</p>' +
+      '<p>Завантажте музику: файли збережуться на вашому Google Диску, а список треків у Firebase.</p>' +
       '<button class="up" data-upload><svg class="ic"><use href="#i-up"/></svg><span>Завантажити</span></button></div>';
   }
 
   function render() {
     const q = query.trim().toLowerCase();
-    const items = tracks.filter((t) =>
-      !q || ((t.title || '') + ' ' + (t.artist || '') + ' ' + (t.album || '')).toLowerCase().includes(q));
+    const items = tracks.map((t, i) => ({ t, i })).filter((o) =>
+      !q || ((o.t.title || '') + ' ' + (o.t.artist || '') + ' ' + (o.t.album || '')).toLowerCase().includes(q));
     const host = $('[data-list]');
     if (!tracks.length) host.innerHTML = blankHtml();
     else if (!items.length) host.innerHTML = '<div class="blank"><p>Нічого не знайдено</p></div>';
-    else host.innerHTML = items.map(rowHtml).join('');
+    else host.innerHTML = items.map((o) => rowHtml(o.t, o.i)).join('');
     $$('[data-count]').forEach((e) => { e.textContent = tracks.length; });
   }
 
@@ -142,17 +146,18 @@
   function setPlayState() {
     body.classList.toggle('playing', playing);
     $$('[data-play]').forEach((b) => b.setAttribute('aria-label', playing ? 'Пауза' : 'Відтворити'));
-    document.title = playing && cur() ? (cur().title || 'Тембр') + ' — Тембр' : 'Тембр';
+    const t = cur();
+    document.title = playing && t ? (t.title || 'Тембр') + ' — Тембр' : 'Тембр';
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
+  }
+
+  function setStatus(txt) {
+    $$('[data-status]').forEach((e) => { e.textContent = txt; });
   }
 
   function setLoading(on) {
     body.classList.toggle('loading', on);
     if (!on) setStatus('');
-  }
-
-  function setStatus(txt) {
-    $$('[data-status]').forEach((e) => { e.textContent = txt; });
   }
 
   // ---------- режим вікна: розгорнутий / компактний ----------
@@ -174,13 +179,8 @@
 
   // ---------- відтворення ----------
 
-  function stopSim() {
-    if (simTimer) { clearInterval(simTimer); simTimer = null; }
-  }
-
   function hardStop() {
     loadTok++;
-    stopSim();
     audio.pause();
     audio.removeAttribute('src');
     audio.load();
@@ -193,17 +193,6 @@
 
   function startPlay() {
     if (!curId) return;
-    if (sim) {
-      playing = true;
-      setPlayState();
-      stopSim();
-      simTimer = setInterval(() => {
-        pos += 1;
-        if (dur && pos >= dur) { onEnded(); return; }
-        tick();
-      }, 1000);
-      return;
-    }
     const p = audio.play();
     if (p && p.catch) {
       p.catch((err) => {
@@ -215,23 +204,20 @@
   }
 
   function pausePlay() {
-    if (sim) {
-      playing = false;
-      stopSim();
-      setPlayState();
-    } else {
-      audio.pause();
-    }
+    audio.pause();
+    playing = false;
+    setPlayState();
   }
 
   async function load(id, autoplay) {
     const t = byId(id);
     if (!t) return;
     const tok = ++loadTok;
-    stopSim();
     audio.pause();
     playing = false;
+    loadedId = null;
     curId = id;
+    store('tembr.last', id);
     pos = 0;
     dur = t.duration || 0;
     if (history[history.length - 1] !== id) history.push(id);
@@ -249,7 +235,6 @@
       });
     } catch (e) {
       if (tok !== loadTok) return;
-      loadedId = null;
       setLoading(false);
       toast(errText(e));
       return;
@@ -257,13 +242,7 @@
     if (tok !== loadTok) return;
     setLoading(false);
     loadedId = id;
-    if (url) {
-      sim = false;
-      audio.src = url;
-      audio.currentTime = 0;
-    } else {
-      sim = true;
-    }
+    audio.src = url;
     if (autoplay) startPlay();
     prefetchNext();
   }
@@ -295,7 +274,7 @@
 
   function prev() {
     if (!tracks.length) return;
-    if (pos > 3) { seekTo(0); return; }
+    if (pos > 3 && loadedId === curId) { seekTo(0); return; }
     if (shuffle && history.length > 1) {
       history.pop();
       load(history.pop(), true);
@@ -307,8 +286,7 @@
 
   function onEnded() {
     if (repeat === 'one') {
-      pos = 0;
-      if (!sim) audio.currentTime = 0;
+      audio.currentTime = 0;
       startPlay();
       return;
     }
@@ -318,7 +296,7 @@
     } else {
       pausePlay();
       pos = 0;
-      if (!sim) audio.currentTime = 0;
+      audio.currentTime = 0;
       tick();
     }
   }
@@ -330,9 +308,9 @@
   }
 
   function seekTo(ratio) {
-    if (!dur) return;
+    if (!dur || loadedId !== curId) return;
     pos = Math.max(0, Math.min(1, ratio)) * dur;
-    if (!sim && loadedId === curId) audio.currentTime = pos;
+    audio.currentTime = pos;
     tick();
   }
 
@@ -423,7 +401,7 @@
   // Google дозволяє відкрити вікно доступу лише після кліку, тому токен
   // відновлюємо тут, до вибору файлів, а не після нього.
   async function requestUpload() {
-    if (Store.hasToken && !Store.hasToken()) {
+    if (!Store.hasToken()) {
       try {
         await Store.ensureToken();
         toast('Доступ до Диска відновлено. Натисніть «Завантажити» ще раз.');
@@ -439,7 +417,7 @@
     const files = Array.from(list || []).filter((f) =>
       /^audio\//.test(f.type) || /\.(mp3|m4a|aac|flac|ogg|oga|opus|wav)$/i.test(f.name));
     if (!files.length) { toast('Серед вибраних файлів немає аудіо.'); return; }
-    if (Store.hasToken && !Store.hasToken()) {
+    if (!Store.hasToken()) {
       toast('Потрібно відновити доступ до Диска: натисніть кнопку «Завантажити».');
       return;
     }
@@ -460,8 +438,7 @@
   async function del(id) {
     const t = byId(id);
     if (!t) return;
-    const extra = Store.mode === 'cloud' ? ' Файл також буде видалено з Google Диска.' : '';
-    if (!window.confirm('Видалити «' + (t.title || 'Без назви') + '»?' + extra)) return;
+    if (!window.confirm('Видалити «' + (t.title || 'Без назви') + '»? Файл також буде видалено з Google Диска.')) return;
     try {
       await Store.removeTrack(t);
       toast('Видалено');
@@ -482,25 +459,25 @@
   function onAuth(u) {
     if (!u) {
       hardStop();
+      curId = null;
       body.dataset.auth = 'out';
       $('#authMsg').textContent = '';
       return;
     }
     body.dataset.auth = 'in';
     const img = $('#avatarImg');
-    if (u.photo) { img.src = u.photo; img.hidden = false; $('#avatarTxt').hidden = true; }
-    else { img.hidden = true; $('#avatarTxt').hidden = false; $('#avatarTxt').textContent = (u.name || 'Т').trim().charAt(0).toUpperCase(); }
-    $('#muName').textContent = u.name || '';
-    $('#muMail').textContent = u.email || (u.demo ? 'Файли не зберігаються' : '');
-    $('#signOutBtn').hidden = !!u.demo;
-    const banner = $('#banner');
-    if (u.demo) {
-      banner.hidden = false;
-      banner.textContent = 'Демо-режим: Firebase і Google Диск ще не налаштовані (див. README.md). ' +
-        'Перші шість треків умовні, без звуку; додані вами файли програються, але зникнуть після оновлення сторінки.';
+    const txt = $('#avatarTxt');
+    if (u.photo) {
+      img.src = u.photo;
+      img.hidden = false;
+      txt.hidden = true;
     } else {
-      banner.hidden = true;
+      img.hidden = true;
+      txt.hidden = false;
+      txt.textContent = (u.name || 'Т').trim().charAt(0).toUpperCase();
     }
+    $('#muName').textContent = u.name || '';
+    $('#muMail').textContent = u.email || '';
   }
 
   function onTracks(list) {
@@ -508,9 +485,11 @@
     body.toggleAttribute('data-empty', !tracks.length);
     if (curId && !byId(curId)) { hardStop(); curId = null; }
     if (!curId && tracks.length) {
-      curId = tracks[0].id;
+      const last = store('tembr.last');
+      const t = (last && byId(last)) || tracks[0];
+      curId = t.id;
       pos = 0;
-      dur = tracks[0].duration || 0;
+      dur = t.duration || 0;
     }
     if (!tracks.length) { dur = 0; pos = 0; }
     render();
@@ -521,6 +500,7 @@
   function onError(msg) {
     if (body.dataset.auth === 'loading') {
       body.dataset.auth = 'out';
+      $('[data-signin]').hidden = true;
       $('#authMsg').textContent = msg;
     } else {
       toast(msg);
@@ -571,6 +551,7 @@
       if (mq.matches && body.dataset.view === 'expanded') setView('compact');
       return;
     }
+    if (body.dataset.auth !== 'in') return;
     if (e.code === 'Space' && tag !== 'BUTTON') { e.preventDefault(); togglePlay(); }
     else if (e.shiftKey && e.key === 'ArrowRight') next();
     else if (e.shiftKey && e.key === 'ArrowLeft') prev();
@@ -611,10 +592,10 @@
   });
 
   audio.addEventListener('play', () => { playing = true; setPlayState(); meta(); });
-  audio.addEventListener('pause', () => { if (audio.ended) return; playing = false; setPlayState(); });
-  audio.addEventListener('timeupdate', () => { if (!sim) { pos = audio.currentTime; tick(); } });
+  audio.addEventListener('pause', () => { playing = false; setPlayState(); });
+  audio.addEventListener('timeupdate', () => { if (loadedId === curId) { pos = audio.currentTime; tick(); } });
   audio.addEventListener('loadedmetadata', () => {
-    if (!sim && isFinite(audio.duration) && audio.duration > 0) { dur = audio.duration; tick(); }
+    if (isFinite(audio.duration) && audio.duration > 0) { dur = audio.duration; tick(); }
   });
   audio.addEventListener('ended', onEnded);
   audio.addEventListener('error', () => {
@@ -638,5 +619,18 @@
   tick();
   setPlayState();
 
+  if (!configured || !Store) {
+    body.dataset.auth = 'out';
+    $('[data-signin]').hidden = true;
+    $('#authMsg').textContent = 'Не заповнено config.js: вкажіть ключі Firebase та Google Client ID (див. README.md).';
+    return;
+  }
+
   Store.init({ onAuth, onTracks, onError });
+
+  setTimeout(() => {
+    if (body.dataset.auth === 'loading') {
+      onError('Не вдається підключитися до Firebase і Google. Перевірте з’єднання, вимкніть блокувальники реклами й оновіть сторінку.');
+    }
+  }, 15000);
 })();
