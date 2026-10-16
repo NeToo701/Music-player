@@ -12,7 +12,7 @@
   const SCOPE = 'openid email profile https://www.googleapis.com/auth/drive.file';
   const API = 'https://www.googleapis.com/drive/v3/';
   const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
-  const CACHE_LIMIT = 5;
+  const CACHE_LIMIT = 3;
 
   const MIME = {
     mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', flac: 'audio/flac',
@@ -88,6 +88,13 @@
 
   // ---------- Google Диск ----------
 
+  async function httpError(r) {
+    const e = new Error('Drive ' + r.status);
+    e.status = r.status;
+    try { e.detail = (await r.json()).error.message; } catch (x) { /* без деталей */ }
+    return e;
+  }
+
   async function driveFetch(url, opts, silent) {
     const run = async () => {
       const t = await getToken(silent);
@@ -99,12 +106,7 @@
       token = null;
       r = await run();
     }
-    if (!r.ok) {
-      const e = new Error('Drive ' + r.status);
-      e.status = r.status;
-      try { e.detail = (await r.json()).error.message; } catch (x) { /* без деталей */ }
-      throw e;
-    }
+    if (!r.ok) throw await httpError(r);
     return r;
   }
 
@@ -113,16 +115,19 @@
     const name = (C.driveFolderName || 'Тембр').replace(/'/g, "\\'");
     const uref = FS.doc(db, 'users', user.uid);
 
+    let saved = null;
     try {
       const snap = await FS.getDoc(uref);
-      const saved = snap.exists() ? snap.data().driveFolderId : null;
-      if (saved) {
-        const r = await driveFetch(API + 'files/' + encodeURIComponent(saved) + '?fields=id,trashed');
-        const j = await r.json();
+      saved = snap.exists() ? snap.data().driveFolderId : null;
+    } catch (e) { /* правила або мережа: шукатимемо папку на Диску */ }
+
+    if (saved) {
+      try {
+        const j = await (await driveFetch(API + 'files/' + encodeURIComponent(saved) + '?fields=id,trashed')).json();
         if (!j.trashed) { folderId = saved; return folderId; }
+      } catch (e) {
+        if (!e || e.status !== 404) throw e;
       }
-    } catch (e) {
-      if (e && e.status !== 404) throw e;
     }
 
     const q = encodeURIComponent("name='" + name + "' and mimeType='application/vnd.google-apps.folder' and trashed=false");
@@ -137,7 +142,9 @@
       })).json();
       folderId = created.id;
     }
-    await FS.setDoc(uref, { driveFolderId: folderId }, { merge: true });
+    try {
+      await FS.setDoc(uref, { driveFolderId: folderId }, { merge: true });
+    } catch (e) { /* не критично: наступного разу папку знайдемо за назвою */ }
     return folderId;
   }
 
@@ -156,11 +163,7 @@
       headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'multipart/related; boundary=' + b },
       body
     });
-    if (!r.ok) {
-      const e = new Error('Drive ' + r.status);
-      e.status = r.status;
-      throw e;
-    }
+    if (!r.ok) throw await httpError(r);
     return r.json();
   }
 
@@ -181,9 +184,7 @@
     });
     if (!init.ok) {
       if (init.status === 401) token = null;
-      const e = new Error('Drive ' + init.status);
-      e.status = init.status;
-      throw e;
+      throw await httpError(init);
     }
     const loc = init.headers.get('Location');
     if (!loc) return uploadMultipart(file, meta, t, mime);
@@ -327,7 +328,7 @@
           added++;
         } catch (e) {
           failed++;
-          errors.push(f.name + ': ' + (e && e.message ? e.message : e));
+          errors.push(f.name + ': ' + ((e && (e.detail || e.message)) || e));
           if (e && e.status === 403 && /quota|storage/i.test(e.detail || '')) break;
         }
       }
