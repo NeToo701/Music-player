@@ -4,8 +4,24 @@
 
   const C = window.TEMBR_CONFIG || {};
   const fbc = C.firebase || {};
-  const configured = !!(fbc.apiKey && fbc.projectId && fbc.appId && C.googleClientId);
   const Store = window.CloudStore;
+
+  // Повертає опис проблеми з налаштуванням або порожній рядок, якщо все гаразд.
+  function setupProblem() {
+    if (!window.TEMBR_CONFIG) {
+      return 'Файл config.js не завантажився: його немає в репозиторії поруч з index.html, або браузер показує стару копію (спробуйте Ctrl+F5).';
+    }
+    const need = [];
+    if (!fbc.apiKey) need.push('firebase.apiKey');
+    if (!fbc.projectId) need.push('firebase.projectId');
+    if (!fbc.appId) need.push('firebase.appId');
+    if (!C.googleClientId) need.push('googleClientId');
+    if (need.length) return 'У config.js не заповнено: ' + need.join(', ') + '.';
+    if (!Store) {
+      return 'Не завантажився файл js/store-cloud.js: перевірте, що він є в папці js репозиторію, і оновіть сторінку (Ctrl+F5).';
+    }
+    return '';
+  }
   const esc = window.U.esc;
   const fmt = window.U.fmt;
   const hash = window.U.hash;
@@ -619,10 +635,11 @@
   tick();
   setPlayState();
 
-  if (!configured || !Store) {
+  const problem = setupProblem();
+  if (problem) {
     body.dataset.auth = 'out';
     $('[data-signin]').hidden = true;
-    $('#authMsg').textContent = 'Не заповнено config.js: вкажіть ключі Firebase та Google Client ID (див. README.md).';
+    $('#authMsg').textContent = problem;
     return;
   }
 
