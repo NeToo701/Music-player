@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0e1116">
+<title>Тембр</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body data-view="expanded" data-auth="loading">
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l13-7.5z" fill="currentColor"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" stroke-width="3"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><path d="M19 4.5v15L8 12z" fill="currentColor"/><path d="M5 5v14"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M5 4.5v15l11-7.5z" fill="currentColor"/><path d="M19 5v14"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 013-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 01-3 3H3"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></symbol>
+  <symbol id="i-vol" viewBox="0 0 24 24"><path d="M4 10v4h4l5 4V6L8 10zM16 9a4 4 0 010 6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-chev-up" viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V6l11-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 4H5v16h4M16 8l4 4-4 4M20 12H9"/></symbol>
+</svg>
+
+<input type="file" id="file" accept="audio/*,.mp3,.m4a,.aac,.flac,.ogg,.oga,.opus,.wav" multiple hidden>
+
+<!-- Екран входу / завантаження -->
+<main class="auth" id="auth">
+  <div class="auth-card">
+    <div class="logo">Тембр</div>
+    <p>Ваша музика на Google Диску, доступна з комп'ютера й телефона.</p>
+    <button class="up" data-signin>Увійти через Google</button>
+    <p class="hint" id="authMsg">Завантаження…</p>
+  </div>
+</main>
+
+<div class="app" id="app">
+
+  <!-- Розгорнутий плеєр -->
+  <section class="np" aria-label="Зараз грає">
+    <div class="np-top">
+      <button class="ghost" data-collapse aria-label="Згорнути плеєр"><svg class="ic"><use href="#i-down"/></svg></button>
+      <span>Зараз грає</span>
+      <span class="np-sp"></span>
+    </div>
+    <div class="np-body">
+      <div class="cover empty" data-cover><svg class="ic ph"><use href="#i-music"/></svg></div>
+      <div class="ttl" data-title></div>
+      <div class="art" data-artist></div>
+      <div class="stat" data-status aria-live="polite"></div>
+      <div class="prog">
+        <span data-cur>0:00</span>
+        <div class="bar" data-seek role="slider" tabindex="0" aria-label="Позиція в треку" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="tr"><div class="fl" data-fill></div></div></div>
+        <span data-dur>0:00</span>
+      </div>
+      <div class="ctl">
+        <button class="sk opt" data-shuffle aria-label="Перемішати" aria-pressed="false"><svg class="ic"><use href="#i-shuffle"/></svg></button>
+        <button class="sk" data-prev aria-label="Попередній"><svg class="ic"><use href="#i-prev"/></svg></button>
+        <button class="big" data-play aria-label="Відтворити">
+          <svg class="ic ic-play"><use href="#i-play"/></svg><svg class="ic ic-pause"><use href="#i-pause"/></svg><span class="spin"></span>
+        </button>
+        <button class="sk" data-next aria-label="Наступний"><svg class="ic"><use href="#i-next"/></svg></button>
+        <button class="sk opt" data-repeat data-state="off" aria-label="Повтор: вимкнено"><svg class="ic"><use href="#i-repeat"/></svg></button>
+      </div>
+      <div class="vol"><svg class="ic"><use href="#i-vol"/></svg><input type="range" data-vol min="0" max="100" value="85" aria-label="Гучність"></div>
+    </div>
+  </section>
+
+  <!-- Бібліотека -->
+  <section class="q">
+    <div class="qh">
+      <h2>Бібліотека<small><span data-count>0</span> треків</small></h2>
+      <label class="search"><svg class="ic"><use href="#i-search"/></svg><input id="q" type="search" placeholder="Пошук" aria-label="Пошук" autocomplete="off"></label>
+      <button class="up" data-upload aria-label="Завантажити музику"><svg class="ic"><use href="#i-up"/></svg><span>Завантажити</span></button>
+      <div class="user">
+        <button class="avatar" id="userBtn" aria-haspopup="true" aria-expanded="false" aria-label="Акаунт"><img id="avatarImg" referrerpolicy="no-referrer" alt="" hidden><span id="avatarTxt">Т</span></button>
+        <div class="menu" id="userMenu" hidden>
+          <div class="mu-name" id="muName"></div>
+          <div class="mu-mail" id="muMail"></div>
+          <button class="mu-btn" data-signout id="signOutBtn"><svg class="ic"><use href="#i-logout"/></svg>Вийти</button>
+        </div>
+      </div>
+    </div>
+    <div class="banner" id="banner" hidden></div>
+    <div class="upl" id="upl" hidden><div class="upl-t"></div><div class="upl-b"><i></i></div></div>
+    <div class="list" data-list></div>
+  </section>
+
+  <!-- Компактний плеєр -->
+  <footer class="mini" aria-label="Плеєр">
+    <div class="seek" data-seek role="slider" tabindex="0" aria-label="Позиція в треку" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="tr"><div class="fl" data-fill></div></div></div>
+    <div class="mini-in">
+      <button class="mi-info" data-expand aria-label="Розгорнути плеєр">
+        <span class="cv empty" data-cover></span>
+        <span class="mi-tx"><span class="pt" data-title></span><span class="pa" data-artist></span></span>
+      </button>
+      <div class="mi-ctl">
+        <button class="sk hide-m" data-prev aria-label="Попередній"><svg class="ic"><use href="#i-prev"/></svg></button>
+        <button class="big" data-play aria-label="Відтворити">
+          <svg class="ic ic-play"><use href="#i-play"/></svg><svg class="ic ic-pause"><use href="#i-pause"/></svg><span class="spin"></span>
+        </button>
+        <button class="sk" data-next aria-label="Наступний"><svg class="ic"><use href="#i-next"/></svg></button>
+      </div>
+      <div class="mi-r">
+        <span class="tm"><span data-cur>0:00</span> / <span data-dur>0:00</span></span>
+        <button class="ghost" data-expand aria-label="Розгорнути плеєр"><svg class="ic"><use href="#i-chev-up"/></svg></button>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<div class="drop" aria-hidden="true">Відпустіть аудіофайли, щоб додати</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js" defer></script>
+<script src="config.js" defer></script>
+<script src="js/utils.js" defer></script>
+<script src="js/meta.js" defer></script>
+<script src="js/store-demo.js" defer></script>
+<script src="js/store-cloud.js" defer></script>
+<script src="js/app.js" defer></script>
+</body>
+</html>
