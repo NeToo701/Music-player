@@ -56,6 +56,7 @@
           if (r && r.access_token) {
             token = r.access_token;
             tokenExp = Date.now() + ((+r.expires_in || 3600) - 60) * 1000;
+            pushToken();
             resolve(token);
           } else {
             reject(new Error((r && r.error) || 'token_error'));
@@ -73,6 +74,10 @@
         reject(e);
       }
     });
+  }
+
+  function pushToken() {
+    if (window.Stream) window.Stream.setToken(token, tokenExp);
   }
 
   function getToken(silent) {
@@ -249,6 +254,7 @@
         ]);
         AU = res[1];
         FS = res[2];
+        if (window.Stream) window.Stream.setProvider(() => (token && Date.now() < tokenExp ? { token, exp: tokenExp } : null));
         const app = res[0].initializeApp(C.firebase);
         auth = AU.getAuth(app);
         db = FS.getFirestore(app);
@@ -269,6 +275,7 @@
           } else {
             folderId = null;
             token = null;
+            pushToken();
             cache.forEach((url) => URL.revokeObjectURL(url));
             cache.clear();
             H.onTracks([]);
@@ -288,6 +295,7 @@
 
     async signOut() {
       token = null;
+      pushToken();
       await AU.signOut(auth);
     },
 
@@ -299,7 +307,7 @@
       return getToken(false);
     },
 
-    async addFiles(files, onStatus) {
+    async addFiles(files, onStatus, onFileDone) {
       const folder = await ensureFolder();
       let added = 0;
       let failed = 0;
@@ -326,16 +334,30 @@
             addedAt: Date.now()
           });
           added++;
+          if (onFileDone) onFileDone(f);
         } catch (e) {
           failed++;
           errors.push(f.name + ': ' + ((e && (e.detail || e.message)) || e));
           if (e && e.status === 403 && /quota|storage/i.test(e.detail || '')) break;
+          // Токен закінчився посеред довгого імпорту: решта лишається в списку, щоб додати після відновлення доступу.
+          if (e && /popup|no_token|token_error|access_denied/i.test(e.message || '')) break;
         }
       }
       return { added, failed, errors };
     },
 
+    // Стрімінг через service worker вмикається, коли він активний.
+    streaming() {
+      return !!(window.Stream && window.Stream.active());
+    },
+
     async getAudioUrl(t, onProgress, opts) {
+      if (window.Stream) await window.Stream.ready;
+      if (!(opts && opts.blob) && this.streaming()) {
+        await getToken(opts && opts.silent);
+        pushToken();
+        return window.Stream.url(t);
+      }
       if (cache.has(t.id)) {
         const url = cache.get(t.id);
         remember(t.id, url);
@@ -372,10 +394,6 @@
       const clear = () => inflight.delete(t.id);
       job.then(clear, clear);
       return job;
-    },
-
-    prefetch(t) {
-      this.getAudioUrl(t, null, { silent: true }).catch(() => {});
     },
 
     async removeTrack(t) {

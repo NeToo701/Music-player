@@ -29,9 +29,8 @@
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
   const body = document.body;
-  const audio = new Audio();
-  audio.preload = 'auto';
-  const fileInput = $('#file');
+  let audio = null;         // елемент, який зараз грає
+  let spare = null;         // елемент із підвантаженим наступним треком
 
   const PAL = [
     ['#7dd3fc', '#0c4a6e'], ['#94a3b8', '#1e293b'], ['#fbbf77', '#7c2d12'], ['#86efac', '#14532d'],
@@ -50,6 +49,14 @@
   let query = '';
   let uploading = false;
   let history = [];
+  let spareId = null;       // id треку, підвантаженого у spare
+  let pfTok = 0;
+  let nextPick = null;      // вибраний наперед наступний трек для перемішування
+  let curAuto = false;      // чи потрібно грати одразу після завантаження
+  let fallbackFor = null;   // трек, для якого вже пробували запасне завантаження
+  let sharedChecked = false;
+  let volume = 0.85;
+  let wakeLock = null;
   let toastTimer = null;
 
   // ---------- допоміжні ----------
@@ -197,15 +204,27 @@
 
   function hardStop() {
     loadTok++;
+    pfTok++;
     audio.pause();
     audio.removeAttribute('src');
     audio.load();
+    clearSpare();
     loadedId = null;
     playing = false;
     pos = 0;
     setLoading(false);
     setPlayState();
   }
+
+  function clearSpare() {
+    spareId = null;
+    if (spare.getAttribute('src')) {
+      spare.removeAttribute('src');
+      spare.load();
+    }
+  }
+
+  const isStreamUrl = (u) => String(u || '').indexOf('/__stream/') >= 0;
 
   function startPlay() {
     if (!curId) return;
@@ -214,7 +233,8 @@
       p.catch((err) => {
         playing = false;
         setPlayState();
-        if (!err || err.name !== 'AbortError') toast('Не вдалося почати відтворення. Натисніть ▶ ще раз.');
+        // AbortError: трек змінили; NotSupportedError: про це повідомить подія error самого елемента.
+        if (!err || (err.name !== 'AbortError' && err.name !== 'NotSupportedError')) toast('Не вдалося почати відтворення. Натисніть ▶ ще раз.');
       });
     }
   }
@@ -229,10 +249,13 @@
     const t = byId(id);
     if (!t) return;
     const tok = ++loadTok;
+    pfTok++;
     audio.pause();
     playing = false;
     loadedId = null;
     curId = id;
+    curAuto = !!autoplay;
+    fallbackFor = null;
     store('tembr.last', id);
     pos = 0;
     dur = t.duration || 0;
@@ -242,7 +265,29 @@
     meta();
     tick();
     setPlayState();
+
+    // Трек уже підвантажено у запасний елемент: міняємо місцями, грає одразу.
+    if (spareId === id && spare.getAttribute('src')) {
+      const old = audio;
+      audio = spare;
+      spare = old;
+      clearSpare();
+      loadedId = id;
+      if (isFinite(audio.duration) && audio.duration > 0) dur = audio.duration;
+      tick();
+      if (audio.readyState >= 3 || !autoplay) {
+        setLoading(false);
+      } else {
+        setLoading(true);
+        setStatus('Буферизація…');
+      }
+      if (autoplay) startPlay();
+      prefetchNext();
+      return;
+    }
+
     setLoading(true);
+    if (Store.streaming && Store.streaming()) setStatus('Підключення до Диска…');
 
     let url = null;
     try {
@@ -256,27 +301,96 @@
       return;
     }
     if (tok !== loadTok) return;
-    setLoading(false);
     loadedId = id;
     audio.src = url;
+    if (!autoplay) setLoading(false);
     if (autoplay) startPlay();
     prefetchNext();
   }
 
-  function prefetchNext() {
-    if (shuffle || !Store.prefetch) return;
+  // Підвантажує наступний трек у запасний елемент, щоб перемикання було миттєвим.
+  async function prefetchNext() {
+    const tk = ++pfTok;
+    if (repeat === 'one') { clearSpare(); return; }
     const id = nextId(true);
     const n = id && id !== curId ? byId(id) : null;
-    if (n) Store.prefetch(n);
+    if (!n) { clearSpare(); return; }
+    if (spareId === n.id) return;
+    try {
+      const url = await Store.getAudioUrl(n, null, { silent: true });
+      if (tk !== pfTok) return;
+      spare.src = url;
+      spare.load();
+      spareId = n.id;
+    } catch (e) { /* без підвантаження трек просто завантажиться при перемиканні */ }
+  }
+
+  // Якщо стрімінг не спрацював, завантажуємо файл цілком і продовжуємо з того ж місця.
+  async function fallbackToBlob() {
+    const t = cur();
+    if (!t) return;
+    fallbackFor = t.id;
+    const tok = ++loadTok;
+    const resume = playing || curAuto;
+    const at = audio.currentTime || 0;
+    playing = false;
+    setPlayState();
+    setLoading(true);
+    try {
+      const url = await Store.getAudioUrl(t, (p) => {
+        if (tok === loadTok) setStatus('Завантаження з Диска… ' + Math.round(p * 100) + '%');
+      }, { blob: true });
+      if (tok !== loadTok) return;
+      audio.addEventListener('loadedmetadata', () => { if (at > 1) audio.currentTime = at; }, { once: true });
+      audio.src = url;
+      if (resume) startPlay();
+    } catch (e) {
+      if (tok !== loadTok) return;
+      setLoading(false);
+      toast(errText(e));
+    }
+  }
+
+  function onAudioError(a) {
+    if (a === spare) { clearSpare(); return; }
+    if (a !== audio || !audio.getAttribute('src')) return;
+    if (isStreamUrl(audio.src) && fallbackFor !== curId && Store.getAudioUrl) {
+      fallbackToBlob();
+      return;
+    }
+    playing = false;
+    setLoading(false);
+    setPlayState();
+    toast('Не вдалося відтворити цей файл (формат не підтримується браузером?).');
+  }
+
+  function mkAudio() {
+    const a = new Audio();
+    a.preload = 'auto';
+    a.volume = volume;
+    a.addEventListener('play', () => { if (a === audio) { playing = true; setPlayState(); meta(); } });
+    a.addEventListener('pause', () => { if (a === audio) { playing = false; setPlayState(); } });
+    a.addEventListener('timeupdate', () => { if (a === audio && loadedId === curId) { pos = a.currentTime; tick(); } });
+    a.addEventListener('loadedmetadata', () => {
+      if (a === audio && isFinite(a.duration) && a.duration > 0) { dur = a.duration; tick(); }
+    });
+    const ready = () => { if (a === audio && loadedId === curId && body.classList.contains('loading')) setLoading(false); };
+    a.addEventListener('canplay', ready);
+    a.addEventListener('playing', ready);
+    a.addEventListener('ended', () => { if (a === audio) onEnded(); });
+    a.addEventListener('error', () => onAudioError(a));
+    return a;
   }
 
   function nextId(auto) {
     if (!tracks.length) return null;
     const i = idxOf(curId);
     if (shuffle && tracks.length > 1) {
+      if (nextPick && nextPick.from === curId && byId(nextPick.id)) return nextPick.id;
       let j;
       do { j = Math.floor(Math.random() * tracks.length); } while (j === i);
-      return tracks[j].id;
+      nextPick = { from: curId, id: tracks[j].id };
+      return nextPick.id;
     }
     const n = i + 1;
     if (n >= tracks.length) return (repeat === 'all' || !auto) ? tracks[0].id : null;
@@ -354,14 +468,17 @@
 
   function toggleShuffle() {
     shuffle = !shuffle;
+    nextPick = null;
     store('tembr.shuffle', shuffle ? '1' : '0');
     syncModes();
+    prefetchNext();
   }
 
   function cycleRepeat() {
     repeat = repeat === 'off' ? 'all' : repeat === 'all' ? 'one' : 'off';
     store('tembr.repeat', repeat);
     syncModes();
+    prefetchNext();
   }
 
   function syncModes() {
@@ -414,41 +531,64 @@
     $('.upl-b i', el).style.width = Math.round(((s.i + frac) / s.n) * 100) + '%';
   }
 
-  // Google дозволяє відкрити вікно доступу лише після кліку, тому токен
-  // відновлюємо тут, до вибору файлів, а не після нього.
-  async function requestUpload() {
+  async function keepAwake(on) {
+    try {
+      if (on && navigator.wakeLock && !wakeLock) {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => { wakeLock = null; });
+      } else if (!on && wakeLock) {
+        await wakeLock.release();
+        wakeLock = null;
+      }
+    } catch (e) { /* не критично */ }
+  }
+
+  const isDuplicate = (f) => tracks.some((t) => t.fileName === f.name && +t.size === f.size);
+
+  // Викликається з діалогу імпорту. Повертає false, якщо завантаження не почалось.
+  async function runImport(files, onFileDone) {
+    if (uploading) { toast('Зачекайте, поки завершиться поточне завантаження.'); return false; }
+    // Це відбувається під час кліку «Додати», тому вікно доступу Google дозволено.
     if (!Store.hasToken()) {
       try {
         await Store.ensureToken();
-        toast('Доступ до Диска відновлено. Натисніть «Завантажити» ще раз.');
+      } catch (e) {
+        toast(errText(e));
+        return false;
+      }
+    }
+    uploading = true;
+    keepAwake(true);
+    (async () => {
+      try {
+        const res = await Store.addFiles(files, showUpl, onFileDone);
+        const left = window.Importer.pending();
+        const tail = left ? ' Решта лишилась у списку імпорту («Завантажити»).' : '';
+        if (res.added && !res.failed) toast('Додано треків: ' + res.added + '.' + tail);
+        else if (res.added) toast('Додано: ' + res.added + ', не вдалося: ' + res.failed + '. ' + (res.errors[0] || '') + tail);
+        else toast('Не вдалося додати файли. ' + (res.errors[0] || '') + tail);
       } catch (e) {
         toast(errText(e));
       }
-      return;
-    }
-    fileInput.click();
+      uploading = false;
+      keepAwake(false);
+      $('#upl').hidden = true;
+    })();
+    return true;
   }
 
-  async function handleFiles(list) {
-    const files = Array.from(list || []).filter((f) =>
-      /^audio\//.test(f.type) || /\.(mp3|m4a|aac|flac|ogg|oga|opus|wav)$/i.test(f.name));
-    if (!files.length) { toast('Серед вибраних файлів немає аудіо.'); return; }
-    if (!Store.hasToken()) {
-      toast('Потрібно відновити доступ до Диска: натисніть кнопку «Завантажити».');
-      return;
+  function checkShared() {
+    if (sharedChecked) return;
+    sharedChecked = true;
+    if (/[?&]share=1/.test(location.search)) {
+      try { window.history.replaceState(null, '', location.pathname); } catch (e) { /* не критично */ }
     }
-    if (uploading) { toast('Зачекайте, поки завершиться поточне завантаження.'); return; }
-    uploading = true;
-    try {
-      const res = await Store.addFiles(files, showUpl);
-      if (res.added && !res.failed) toast('Додано треків: ' + res.added);
-      else if (res.added) toast('Додано: ' + res.added + ', не вдалося: ' + res.failed + '. ' + (res.errors[0] || ''));
-      else toast('Не вдалося додати файли. ' + (res.errors[0] || ''));
-    } catch (e) {
-      toast(errText(e));
-    }
-    uploading = false;
-    $('#upl').hidden = true;
+    window.Importer.loadShared().then((n) => {
+      if (n) {
+        window.Importer.open();
+        toast('Отримано файлів: ' + n + '. Перевірте список і натисніть «Додати».');
+      }
+    });
   }
 
   async function del(id) {
@@ -476,6 +616,7 @@
     if (!u) {
       hardStop();
       curId = null;
+      sharedChecked = false;
       body.dataset.auth = 'out';
       $('#authMsg').textContent = '';
       return;
@@ -511,6 +652,7 @@
     render();
     meta();
     tick();
+    if (body.dataset.auth === 'in') checkShared();
   }
 
   function onError(msg) {
@@ -545,7 +687,7 @@
       if (id === curId && loadedId === curId) togglePlay(); else load(id, true);
       return;
     }
-    if (t.closest('[data-upload]')) { requestUpload(); return; }
+    if (t.closest('[data-upload]')) { window.Importer.open(); return; }
     if (t.closest('[data-play]')) { togglePlay(); return; }
     if (t.closest('[data-prev]')) { prev(); return; }
     if (t.closest('[data-next]')) { next(); return; }
@@ -575,17 +717,14 @@
 
   $('#q').addEventListener('input', (e) => { query = e.target.value; render(); });
 
-  fileInput.addEventListener('change', (e) => {
-    handleFiles(e.target.files);
-    e.target.value = '';
-  });
-
   $$('[data-vol]').forEach((v) => {
     const saved = store('tembr.vol');
     if (saved != null && saved !== '') v.value = saved;
-    audio.volume = v.value / 100;
+    volume = v.value / 100;
     v.addEventListener('input', () => {
-      audio.volume = v.value / 100;
+      volume = v.value / 100;
+      audio.volume = volume;
+      spare.volume = volume;
       store('tembr.vol', v.value);
     });
   });
@@ -604,27 +743,22 @@
     if (!body.classList.contains('drag')) return;
     e.preventDefault();
     body.classList.remove('drag');
-    handleFiles(e.dataTransfer.files);
+    window.Importer.addDrop(e.dataTransfer);
   });
-
-  audio.addEventListener('play', () => { playing = true; setPlayState(); meta(); });
-  audio.addEventListener('pause', () => { playing = false; setPlayState(); });
-  audio.addEventListener('timeupdate', () => { if (loadedId === curId) { pos = audio.currentTime; tick(); } });
-  audio.addEventListener('loadedmetadata', () => {
-    if (isFinite(audio.duration) && audio.duration > 0) { dur = audio.duration; tick(); }
+  window.addEventListener('beforeunload', (e) => {
+    if (uploading) { e.preventDefault(); e.returnValue = ''; }
   });
-  audio.addEventListener('ended', onEnded);
-  audio.addEventListener('error', () => {
-    if (!audio.getAttribute('src')) return;
-    playing = false;
-    setPlayState();
-    toast('Не вдалося відтворити цей файл (формат не підтримується браузером?).');
+  document.addEventListener('visibilitychange', () => {
+    if (uploading && document.visibilityState === 'visible') keepAwake(true);
   });
 
   mq.addEventListener('change', applyView);
 
   // ---------- старт ----------
 
+  audio = mkAudio();
+  spare = mkAudio();
+  window.Importer.init({ onImport: runImport, isDuplicate });
   shuffle = store('tembr.shuffle') === '1';
   repeat = ['off', 'all', 'one'].indexOf(store('tembr.repeat')) >= 0 ? store('tembr.repeat') : 'off';
   body.setAttribute('data-empty', '');
