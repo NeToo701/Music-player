@@ -12,7 +12,7 @@ window.TEMBR_CONFIG = {
 
   // Google Cloud → APIs & Services → Credentials → OAuth 2.0 Client ID (Web)
   // Радимо "Web client (auto created by Google Service)"
-  googleClientId: "698626936745-f8d1fe3jl9dqlkp2ghs0mkkndj0t30u0.apps.googleusercontent.com",
+  googleClientId: "1023064214229-lel40o8bg1qu6air6b9ahgfvn0kcceil.apps.googleusercontent.com",
 
   // Назва папки на Google Диску, куди складатимуться файли
   driveFolderName: "Тембр"
