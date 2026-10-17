@@ -27,6 +27,20 @@
   <symbol id="i-chev-up" viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
   <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V6l11-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-9.2-9.3C1.7 8 3.6 4.8 6.9 4.8c2 0 3.5 1.1 5.1 3 1.6-1.9 3.1-3 5.1-3 3.3 0 5.2 3.2 4.1 6.4-1.7 4.7-9.2 9.3-9.2 9.3z"/></symbol>
+  <symbol id="i-lyrics" viewBox="0 0 24 24"><path d="M4 6h16M4 11h10M4 16h16M4 21h8"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M5 20V11M12 20V4M19 20v-6"/></symbol>
+  <symbol id="i-queue-reset" viewBox="0 0 24 24"><path d="M4 6h11M4 11h7M4 16h5"/><path d="M20 12a5 5 0 10-1.5 3.6"/><path d="M20 7v5h-5"/></symbol>
+  <symbol id="i-sort" viewBox="0 0 24 24"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></symbol>
+  <symbol id="i-grip" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.5" fill="currentColor"/><circle cx="15" cy="6" r="1.5" fill="currentColor"/><circle cx="9" cy="12" r="1.5" fill="currentColor"/><circle cx="15" cy="12" r="1.5" fill="currentColor"/><circle cx="9" cy="18" r="1.5" fill="currentColor"/><circle cx="15" cy="18" r="1.5" fill="currentColor"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-8 8"/></symbol>
+  <symbol id="i-pl-add" viewBox="0 0 24 24"><path d="M4 6h11M4 11h7M4 16h7M17 14v6M14 17h6"/></symbol>
+  <symbol id="i-pl-rm" viewBox="0 0 24 24"><path d="M4 6h11M4 11h7M4 16h7M14 17h6"/></symbol>
   <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
   <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 014.5 5H9l2 2.5h8.5A1.5 1.5 0 0121 9v9.5a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 18.5z"/></symbol>
   <symbol id="i-all" viewBox="0 0 24 24"><path d="M5 5h14M5 12h14M5 19h14"/></symbol>
@@ -54,12 +68,15 @@
     <div class="np-top">
       <button class="ghost" data-collapse aria-label="Згорнути плеєр"><svg class="ic"><use href="#i-down"/></svg></button>
       <span>Зараз грає</span>
-      <span class="np-sp"></span>
+      <button class="ghost" data-lyrics-toggle aria-label="Текст пісні" aria-pressed="false"><svg class="ic"><use href="#i-lyrics"/></svg></button>
     </div>
     <div class="np-body">
       <div class="cover empty" data-cover><svg class="ic ph"><use href="#i-music"/></svg></div>
-      <div class="ttl" data-title></div>
-      <div class="art" data-artist></div>
+      <div class="lyr" id="lyr" aria-label="Текст пісні"></div>
+      <div class="ttl-row">
+        <div class="tt"><div class="ttl" data-title></div><div class="art" data-artist></div></div>
+        <button class="fav" data-fav aria-label="Додати в «Улюблені»" aria-pressed="false"><svg class="ic"><use href="#i-heart"/></svg></button>
+      </div>
       <div class="stat" data-status aria-live="polite"></div>
       <div class="prog">
         <span data-cur>0:00</span>
@@ -79,23 +96,34 @@
     </div>
   </section>
 
-  <!-- Бібліотека -->
+  <!-- Бібліотека, плейлисти, статистика -->
   <section class="q">
     <div class="qh">
-      <h2>Бібліотека<small><span data-count>0</span> треків</small></h2>
-      <label class="search"><svg class="ic"><use href="#i-search"/></svg><input id="q" type="search" placeholder="Пошук" aria-label="Пошук" autocomplete="off"></label>
+      <nav class="tabs" aria-label="Розділи">
+        <button data-nav="library">Бібліотека<small><span data-count>0</span></small></button>
+        <button data-nav="playlists">Плейлисти</button>
+      </nav>
       <button class="up" data-upload aria-label="Завантажити музику"><svg class="ic"><use href="#i-up"/></svg><span>Завантажити</span></button>
-      <div class="user">
-        <button class="avatar" id="userBtn" aria-haspopup="true" aria-expanded="false" aria-label="Акаунт"><img id="avatarImg" referrerpolicy="no-referrer" alt="" hidden><span id="avatarTxt">Т</span></button>
-        <div class="menu" id="userMenu" hidden>
-          <div class="mu-name" id="muName"></div>
-          <div class="mu-mail" id="muMail"></div>
-          <button class="mu-btn" data-signout id="signOutBtn"><svg class="ic"><use href="#i-logout"/></svg>Вийти</button>
-        </div>
-      </div>
+      <button class="avatar" id="userBtn" aria-haspopup="dialog" aria-label="Особистий кабінет"><img id="avatarImg" referrerpolicy="no-referrer" alt="" hidden><span id="avatarTxt">Т</span></button>
+    </div>
+    <div class="qt" data-tools>
+      <label class="search"><svg class="ic"><use href="#i-search"/></svg><input id="q" type="search" placeholder="Пошук" aria-label="Пошук" autocomplete="off"></label>
+      <label class="sort"><svg class="ic"><use href="#i-sort"/></svg>
+        <select id="sort" aria-label="Сортування">
+          <option value="new">Нові спочатку</option>
+          <option value="old">Старі спочатку</option>
+          <option value="az">За назвою А–Я</option>
+          <option value="za">За назвою Я–А</option>
+          <option value="custom">Власний порядок</option>
+        </select>
+      </label>
+      <button class="ghost qr" data-reset-queue aria-label="Скинути чергу" title="Скинути чергу"><svg class="ic"><use href="#i-queue-reset"/></svg></button>
     </div>
     <div class="upl" id="upl" hidden><div class="upl-t"></div><div class="upl-b"><i></i></div></div>
+    <div class="plh" data-plh hidden></div>
     <div class="list" data-list></div>
+    <div class="pls" data-pls hidden></div>
+    <div class="stp" data-stats hidden></div>
   </section>
 
   <!-- Компактний плеєр -->
@@ -150,6 +178,24 @@
   </div>
 </div>
 
+<!-- Бічна панель особистого кабінету -->
+<div class="dr-wrap" id="drawer" hidden>
+  <aside class="drawer" role="dialog" aria-modal="true" aria-label="Особистий кабінет">
+    <div class="dr-top"><span>Кабінет</span><button class="ghost" data-drawer-close aria-label="Закрити"><svg class="ic"><use href="#i-close"/></svg></button></div>
+    <div class="dr-user">
+      <span class="avatar lg"><img id="drImg" referrerpolicy="no-referrer" alt="" hidden><span id="drTxt">Т</span></span>
+      <div class="dr-name" id="muName"></div>
+      <div class="dr-mail" id="muMail"></div>
+    </div>
+    <nav class="dr-nav">
+      <button class="dr-i" data-open-stats><svg class="ic"><use href="#i-chart"/></svg>Статистика</button>
+      <button class="dr-i" data-signout id="signOutBtn"><svg class="ic"><use href="#i-logout"/></svg>Вийти</button>
+    </nav>
+  </aside>
+</div>
+
+<input type="file" id="coverFile" accept="image/*" hidden>
+
 <div class="drop" aria-hidden="true">Відпустіть файли або папки, щоб додати</div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -160,6 +206,10 @@
 <script src="js/stream.js" defer></script>
 <script src="js/store-cloud.js" defer></script>
 <script src="js/importer.js" defer></script>
+<script src="js/queue.js" defer></script>
+<script src="js/ui.js" defer></script>
+<script src="js/lyrics.js" defer></script>
+<script src="js/stats.js" defer></script>
 <script src="js/app.js" defer></script>
 </body>
 </html>

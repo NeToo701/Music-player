@@ -25,7 +25,6 @@
   let auth = null;
   let db = null;
   let user = null;
-  let unsub = null;
   let tokenClient = null;
   let token = null;
   let tokenExp = 0;
@@ -225,17 +224,42 @@
 
   // ---------- Firestore ----------
 
+  let subs = [];
+  let subErrShown = false;
+
   function stopSub() {
-    if (unsub) { unsub(); unsub = null; }
+    subs.forEach((u) => { try { u(); } catch (e) { /* вже закрито */ } });
+    subs = [];
+  }
+
+  function subError(e) {
+    if (subErrShown) return;
+    subErrShown = true;
+    if (e && e.code === 'permission-denied') {
+      H.onError('Firestore не дозволяє читати плейлисти й статистику: оновіть правила бази (README, крок 1.4).');
+    } else {
+      H.onError('Firestore: ' + ((e && e.message) || e));
+    }
   }
 
   function startSub() {
+    subErrShown = false;
     const q = FS.query(FS.collection(db, 'users', user.uid, 'tracks'), FS.orderBy('addedAt', 'desc'));
-    unsub = FS.onSnapshot(
+    subs.push(FS.onSnapshot(
       q,
       (snap) => H.onTracks(snap.docs.map((d) => Object.assign({ id: d.id }, d.data()))),
       (e) => H.onError('Firestore: ' + e.message)
-    );
+    ));
+    subs.push(FS.onSnapshot(
+      FS.collection(db, 'users', user.uid, 'playlists'),
+      (snap) => { if (H.onPlaylists) H.onPlaylists(snap.docs.map((d) => Object.assign({ id: d.id }, d.data()))); },
+      subError
+    ));
+    subs.push(FS.onSnapshot(
+      FS.doc(db, 'users', user.uid),
+      (snap) => { if (H.onSettings) H.onSettings(snap.exists() ? snap.data() : {}); },
+      subError
+    ));
   }
 
   // ---------- публічний інтерфейс ----------
@@ -394,6 +418,55 @@
       const clear = () => inflight.delete(t.id);
       job.then(clear, clear);
       return job;
+    },
+
+    async updateTrack(id, patch) {
+      await FS.updateDoc(FS.doc(db, 'users', user.uid, 'tracks', id), patch);
+    },
+
+    // Створює плейлист (повертає id) або зберігає наявний. «Улюблені» мають id 'favorites'.
+    async savePlaylist(p) {
+      const col = FS.collection(db, 'users', user.uid, 'playlists');
+      const data = { name: p.name, trackIds: p.trackIds || [] };
+      if (p.kind) data.kind = p.kind;
+      if (p.id) {
+        await FS.setDoc(FS.doc(db, 'users', user.uid, 'playlists', p.id), data, { merge: true });
+        return p.id;
+      }
+      data.createdAt = Date.now();
+      const ref = await FS.addDoc(col, data);
+      return ref && ref.id;
+    },
+
+    async deletePlaylist(id) {
+      await FS.deleteDoc(FS.doc(db, 'users', user.uid, 'playlists', id));
+    },
+
+    async saveOrder(ids) {
+      await FS.setDoc(FS.doc(db, 'users', user.uid), { order: ids }, { merge: true });
+    },
+
+    // Записує прослуховування в лічильники періодів (тиждень, місяць, рік).
+    async recordPlay(keys, trackId, plays, sec) {
+      if (!user || !(plays || sec)) return;
+      const batch = FS.writeBatch(db);
+      keys.forEach((key) => {
+        batch.set(FS.doc(db, 'users', user.uid, 'stats', key), {
+          plays: FS.increment(plays),
+          sec: FS.increment(Math.round(sec)),
+          tracks: { [trackId]: { n: FS.increment(plays), s: FS.increment(Math.round(sec)) } }
+        }, { merge: true });
+      });
+      await batch.commit();
+    },
+
+    async getStats(keys) {
+      const out = {};
+      await Promise.all(keys.map(async (key) => {
+        const snap = await FS.getDoc(FS.doc(db, 'users', user.uid, 'stats', key));
+        out[key] = snap.exists() ? snap.data() : null;
+      }));
+      return out;
     },
 
     async removeTrack(t) {
