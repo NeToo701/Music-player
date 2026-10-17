@@ -180,3 +180,50 @@ body.drag .drop{display:flex}
   .np,.toast,.upl-b i,.seek .tr{transition:none}
   body.playing .eq i,.spin{animation:none}
 }
+
+/* ---------- імпорт музики ---------- */
+.imp{position:fixed;inset:0;z-index:80;background:rgba(5,8,12,.7);display:flex;align-items:center;justify-content:center;padding:16px}
+.imp-card{width:min(680px,100%);max-height:min(760px,100%);display:flex;flex-direction:column;background:var(--pn);border:1px solid var(--ln);border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.6);overflow:hidden}
+.imp-h{display:flex;align-items:center;justify-content:space-between;padding:14px 12px 6px 22px}
+.imp-h h2{font-size:20px;font-weight:600}
+.imp-add{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:8px 22px 4px}
+.imp-btn{display:flex;align-items:center;gap:10px;padding:12px;border-radius:10px;border:1px solid var(--ln);background:var(--bg);text-align:left;min-width:0}
+.imp-btn:hover{border-color:var(--ac);background:var(--hv)}
+.imp-btn .ic{color:var(--ac)}
+.imp-btn span{display:flex;flex-direction:column;min-width:0;font-weight:500;font-size:14.5px}
+.imp-btn small{font-weight:400;font-size:12px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.imp-hint{padding:10px 22px 4px;overflow:auto;color:var(--mut);font-size:13.5px;line-height:1.5}
+.imp-hint p+p{margin-top:8px}
+.imp-hint b{color:var(--tx);font-weight:600}
+.imp-bar{display:flex;align-items:center;gap:12px;padding:10px 22px 0}
+.imp-all{display:flex;align-items:center;gap:8px;font-size:14.5px;white-space:nowrap;cursor:pointer}
+.imp-bar input[type=search]{flex:1;min-width:0;height:36px;padding:0 12px;border-radius:8px;border:1px solid var(--ln);background:var(--bg);font-size:14.5px;outline:0}
+.imp-bar input[type=search]:focus{border-color:var(--ac)}
+.imp input[type=checkbox]{width:18px;height:18px;accent-color:var(--ac);flex:none}
+.imp-info{padding:8px 22px 4px;font-size:12.5px;color:var(--mut);min-height:1.2em}
+.imp-list{list-style:none;padding:0 12px;margin:0;overflow:auto;flex:1;min-height:0;scrollbar-color:#2f3946 transparent}
+.imp-row{display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:8px;cursor:pointer}
+.imp-row:hover{background:var(--hv)}
+.imp-n{flex:1;min-width:0;display:flex;flex-direction:column}
+.imp-n b{font-weight:500;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.imp-n small{font-size:12px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.imp-row em{font-style:normal;font-size:11.5px;color:var(--mut);border:1px solid var(--ln);border-radius:5px;padding:1px 6px}
+.imp-row.dup .imp-n b{color:var(--mut)}
+.imp-s{font-size:12.5px;color:var(--mut);font-variant-numeric:tabular-nums;white-space:nowrap}
+.imp-f{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 22px calc(14px + env(safe-area-inset-bottom));border-top:1px solid var(--ln)}
+.imp-f .up{margin-left:auto;width:auto;padding:0 20px}
+.imp-f .up span{display:inline}
+.imp-f .up:disabled{opacity:.4;cursor:default;filter:none}
+.imp-clear{color:var(--mut);padding:8px 4px}
+.imp-clear:hover{color:var(--bad)}
+@media(max-width:860px){
+  .imp{padding:0;align-items:flex-end}
+  .imp-card{width:100%;max-height:92dvh;border-radius:16px 16px 0 0;border-bottom:0}
+  .imp-add{grid-template-columns:1fr;gap:8px;padding:8px 14px 4px}
+  .imp-btn small{white-space:normal}
+  .imp-h{padding-left:16px}
+  .imp-hint,.imp-bar,.imp-info{padding-left:16px;padding-right:16px}
+  .imp-list{padding:0 6px}
+  .imp-f{padding-left:16px;padding-right:16px}
+  .imp-f .up{width:auto;padding:0 20px}
+}
