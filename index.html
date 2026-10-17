@@ -8,6 +8,7 @@
 <title>Тембр</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body data-view="expanded" data-auth="loading">
@@ -26,10 +27,15 @@
   <symbol id="i-chev-up" viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
   <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V6l11-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 014.5 5H9l2 2.5h8.5A1.5 1.5 0 0121 9v9.5a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 18.5z"/></symbol>
+  <symbol id="i-all" viewBox="0 0 24 24"><path d="M5 5h14M5 12h14M5 19h14"/></symbol>
   <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 4H5v16h4M16 8l4 4-4 4M20 12H9"/></symbol>
 </svg>
 
 <input type="file" id="file" accept="audio/*,.mp3,.m4a,.aac,.flac,.ogg,.oga,.opus,.wav" multiple hidden>
+<input type="file" id="fileAny" multiple hidden>
+<input type="file" id="dir" webkitdirectory multiple hidden>
 
 <!-- Екран входу / завантаження -->
 <main class="auth" id="auth">
@@ -115,14 +121,45 @@
   </footer>
 </div>
 
-<div class="drop" aria-hidden="true">Відпустіть аудіофайли, щоб додати</div>
+<!-- Діалог імпорту -->
+<div class="imp" id="imp" hidden>
+  <div class="imp-card" role="dialog" aria-modal="true" aria-labelledby="impTitle">
+    <div class="imp-h">
+      <h2 id="impTitle">Додати музику</h2>
+      <button class="ghost" data-imp-close aria-label="Закрити"><svg class="ic"><use href="#i-close"/></svg></button>
+    </div>
+    <div class="imp-add">
+      <button class="imp-btn" data-pick="folder"><svg class="ic"><use href="#i-folder"/></svg><span>Папка<small>вся музика всередині</small></span></button>
+      <button class="imp-btn" data-pick="files"><svg class="ic"><use href="#i-music"/></svg><span>Файли<small>вибрати кілька</small></span></button>
+      <button class="imp-btn" data-pick="any"><svg class="ic"><use href="#i-all"/></svg><span>Будь-які файли<small>без фільтра</small></span></button>
+    </div>
+    <div class="imp-hint" id="impHint">
+      <p><b>Музика розкидана по різних папках?</b> Додавайте частинами: вибрали папку чи кілька файлів — вони потрапили в список, і можна додати ще. Завантаження почнеться після кнопки «Додати».</p>
+      <p>Вибрана папка перебирається повністю, не-музичні файли пропускаються. Якщо провідник не дає позначити кілька файлів, виділіть їх у файловому менеджері телефона й натисніть «Поділитися» → «Тембр» (потрібен встановлений застосунок).</p>
+    </div>
+    <div class="imp-bar" hidden>
+      <label class="imp-all"><input type="checkbox" id="impAll"> Усі</label>
+      <input id="impFilter" type="search" placeholder="Фільтр за назвою або папкою" aria-label="Фільтр" autocomplete="off">
+    </div>
+    <div class="imp-info" id="impInfo" aria-live="polite"></div>
+    <ul class="imp-list" id="impList"></ul>
+    <div class="imp-f">
+      <button class="imp-clear" id="impClear" hidden>Очистити</button>
+      <button class="up" id="impGo" disabled>Додати</button>
+    </div>
+  </div>
+</div>
+
+<div class="drop" aria-hidden="true">Відпустіть файли або папки, щоб додати</div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js" defer></script>
 <script src="config.js" defer></script>
 <script src="js/utils.js" defer></script>
 <script src="js/meta.js" defer></script>
+<script src="js/stream.js" defer></script>
 <script src="js/store-cloud.js" defer></script>
+<script src="js/importer.js" defer></script>
 <script src="js/app.js" defer></script>
 </body>
 </html>
