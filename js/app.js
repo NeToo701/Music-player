@@ -56,6 +56,7 @@
   let uploading = false;
   let toastTimer = null;
   let spareId = null;       // id треку, підвантаженого у spare
+  let resumeHint = false;   // перемикання не вдалося у фоні: нагадати натиснути ▶
   let pfTok = 0;
   let curAuto = false;      // чи потрібно грати одразу після завантаження
   let fallbackFor = null;   // трек, для якого вже пробували запасне завантаження
@@ -547,16 +548,19 @@
 
     let url = null;
     try {
+      // Коли екран вимкнено, вікно Google відкрити неможливо: не чекаємо його, а лишаємо трек на паузі.
       url = await Store.getAudioUrl(t, (p) => {
         if (tok === loadTok) setStatus('Завантаження з Диска… ' + Math.round(p * 100) + '%');
-      });
+      }, { silent: document.visibilityState === 'hidden' });
     } catch (e) {
       if (tok !== loadTok) return;
       setLoading(false);
-      toast(errText(e));
+      if (document.visibilityState === 'hidden' || /no_token|popup/i.test(String((e && e.message) || ''))) resumeHint = true;
+      if (document.visibilityState !== 'hidden') toast(errText(e));
       return;
     }
     if (tok !== loadTok) return;
+    resumeHint = false;
     loadedId = id;
     audio.src = url;
     if (!autoplay) setLoading(false);
@@ -567,6 +571,8 @@
   // Підвантажує наступний трек черги у запасний елемент, щоб перемикання було миттєвим.
   async function prefetchNext() {
     const tk = ++pfTok;
+    warmTok++;          // черга змінилась: завантаження наперед почнемо заново
+    warmFor = null;
     if (repeat === 'one') { clearSpare(); return; }
     const id = Q.peekNext(repeat, true);
     const n = id && id !== curId ? byId(id) : null;
@@ -579,6 +585,49 @@
       spare.load();
       spareId = n.id;
     } catch (e) { /* без підвантаження трек просто завантажиться при перемиканні */ }
+  }
+
+  // ---------- завантаження наперед ----------
+  // Кілька наступних треків качаються цілком і лежать у пам'яті. Тоді черга грає далі навіть зі вимкненим
+  // екраном і після завершення години дії токена Google: мережа й вікно входу для цього не потрібні.
+
+  let warmTok = 0;
+  let warmFor = null;      // для якого поточного треку вже запущено завантаження наперед
+
+  function aheadCount() {
+    const c = navigator.connection;
+    return c && c.saveData ? 1 : 3;
+  }
+
+  async function warmAhead() {
+    const tk = ++warmTok;
+    warmFor = curId;
+    const ids = Q.peekAhead(aheadCount(), repeat);
+    for (let k = 0; k < ids.length; k++) {
+      if (tk !== warmTok) return;
+      const t = byId(ids[k]);
+      if (!t) continue;
+      try {
+        const url = await Store.getAudioUrl(t, null, { silent: true, blob: true });
+        if (tk !== warmTok) return;
+        // Якщо цей трек уже стоїть у запасному елементі як потік, підміняємо його на локальну копію.
+        if (spareId === t.id && spare.getAttribute('src') !== url) {
+          spare.src = url;
+          spare.load();
+        }
+      } catch (e) { return; }   // без токена чи мережі далі не йдемо
+    }
+  }
+
+  // Починаємо, коли поточний трек уже майже весь у буфері (або награно 25 с), щоб не заважати йому.
+  function maybeWarm(a) {
+    if (warmFor === curId || !curId || a !== audio || loadedId !== curId) return;
+    let buffered = false;
+    try {
+      const b = a.buffered;
+      buffered = b.length > 0 && isFinite(a.duration) && a.duration > 0 && b.end(b.length - 1) >= a.duration - 1.5;
+    } catch (e) { /* без буфера */ }
+    if (buffered || a.currentTime > 25 || Store.isCached(curId)) warmAhead();
   }
 
   // Якщо стрімінг не спрацював, завантажуємо файл цілком і продовжуємо з того ж місця.
@@ -627,7 +676,7 @@
     a.addEventListener('play', () => { if (a === audio) { playing = true; setPlayState(); meta(); } });
     a.addEventListener('pause', () => { if (a === audio) { playing = false; setPlayState(); flushStats(false); } });
     a.addEventListener('timeupdate', () => {
-      if (a === audio && loadedId === curId) { pos = a.currentTime; trTick(pos); tick(); }
+      if (a === audio && loadedId === curId) { pos = a.currentTime; trTick(pos); tick(); maybeWarm(a); }
     });
     a.addEventListener('loadedmetadata', () => {
       if (a === audio && isFinite(a.duration) && a.duration > 0) { dur = a.duration; tick(); }
@@ -1403,8 +1452,22 @@
   document.addEventListener('visibilitychange', () => {
     if (uploading && document.visibilityState === 'visible') keepAwake(true);
     if (document.visibilityState === 'hidden') flushStats(false);
+    if (document.visibilityState === 'visible' && resumeHint && curId && loadedId !== curId) {
+      resumeHint = false;
+      toast('Наступний трек готовий. Натисніть ▶, щоб продовжити: потрібно відновити доступ до Диска.');
+    }
     lyrLoopSync();
   });
+  // Токен Google живе ~1 год. Якщо музика грає й токен скоро закінчиться, оновлюємо його при найближчому дотику
+  // (вікно Google можна відкрити лише з жесту користувача).
+  let tokBusy = false;
+  document.addEventListener('click', () => {
+    if (tokBusy || !me || !playing || !Store.tokenLeft) return;
+    const left = Store.tokenLeft();
+    if (left > 8 * 60 * 1000) return;
+    tokBusy = true;
+    Store.refreshToken().then(() => { warmFor = null; maybeWarm(audio); }).catch(() => {}).finally(() => { tokBusy = false; });
+  }, true);
   window.addEventListener('pagehide', () => flushStats(false));
 
   mq.addEventListener('change', applyView);

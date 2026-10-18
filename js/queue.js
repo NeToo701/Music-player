@@ -56,6 +56,18 @@
       return null;
     }
 
+    // Кілька наступних треків (для завантаження наперед), не рухаючи вказівник.
+    function peekAhead(n, repeat) {
+      const out = [];
+      if (repeat === 'one') return out;
+      for (let k = q.i + 1; k < q.ids.length && out.length < n; k++) out.push(q.ids[k]);
+      if (out.length < n && repeat === 'all') {
+        const w = planWrap();
+        for (let k = 0; k < w.length && out.length < n; k++) out.push(w[k]);
+      }
+      return out;
+    }
+
     function next(repeat, auto) {
       const id = peekNext(repeat, auto);
       if (id == null) return null;
@@ -134,7 +146,7 @@
       return true;
     }
 
-    return { state: q, cur, build, peekNext, next, prev, setShuffle, sync, serialize, restore };
+    return { state: q, cur, build, peekNext, peekAhead, next, prev, setShuffle, sync, serialize, restore };
   }
 
   const api = { create };

@@ -12,7 +12,7 @@
   const SCOPE = 'openid email profile https://www.googleapis.com/auth/drive.file';
   const API = 'https://www.googleapis.com/drive/v3/';
   const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
-  const CACHE_LIMIT = 3;
+  const CACHE_LIMIT = 6;
 
   const MIME = {
     mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', flac: 'audio/flac',
@@ -331,6 +331,26 @@
       return getToken(false);
     },
 
+    // Скільки мілісекунд лишилося до кінця дії токена (0, якщо токена немає).
+    tokenLeft() {
+      return token ? Math.max(0, tokenExp - Date.now()) : 0;
+    },
+
+    // Примусово оновлює токен (викликати з жесту користувача, бо відкривається вікно Google).
+    refreshToken() {
+      if (!tokenPromise) {
+        const opts = { prompt: '' };
+        if (user && user.email) opts.login_hint = user.email;
+        tokenPromise = requestToken(opts).finally(() => { tokenPromise = null; });
+      }
+      return tokenPromise;
+    },
+
+    // Чи вже є завантажений цілком трек (тоді токен для його відтворення не потрібен).
+    isCached(id) {
+      return cache.has(id);
+    },
+
     async addFiles(files, onStatus, onFileDone) {
       const folder = await ensureFolder();
       let added = 0;
@@ -377,6 +397,12 @@
 
     async getAudioUrl(t, onProgress, opts) {
       if (window.Stream) await window.Stream.ready;
+      if (!(opts && opts.blob) && cache.has(t.id)) {
+        // Трек уже повністю на пристрої: грає без мережі й без токена.
+        const url = cache.get(t.id);
+        remember(t.id, url);
+        return url;
+      }
       if (!(opts && opts.blob) && this.streaming()) {
         await getToken(opts && opts.silent);
         pushToken();
