@@ -412,3 +412,95 @@ body.lyr-on .lyr{display:block}
 }
 .np.swiping{transition:none!important}
 .qr{border:1px solid var(--ln);background:var(--pn)}
+
+/* ---------- множинний вибір пісень ---------- */
+.row,.pl-card{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.row .cv{position:relative}
+.chk{display:none;position:absolute;inset:0;align-items:center;justify-content:center;border-radius:6px;background:rgba(8,12,18,.5)}
+.chk .ic{width:26px;height:26px;padding:4px;border-radius:50%;border:2px solid rgba(255,255,255,.85);color:transparent;stroke-width:3}
+.list.selmode .chk{display:flex}
+.list.selmode .more,.list.selmode .grip{display:none}
+.row.sel{background:var(--hv);box-shadow:inset 0 0 0 1px var(--ac)}
+.row.sel .chk .ic{background:var(--ac);border-color:var(--ac);color:#04202e}
+.selbar{display:flex;align-items:center;gap:8px;margin:0 32px 10px;padding:6px 8px;border-radius:12px;background:var(--hv);border:1px solid var(--ac)}
+.selbar[hidden]{display:none}
+.sel-n{flex:1;min-width:0;font-size:15px;font-weight:600;white-space:nowrap}
+.selbtn{height:36px;padding:0 14px;border-radius:8px;border:1px solid var(--ln);background:var(--bg);font-size:14.5px;font-weight:500;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:none}
+.selbtn:hover{border-color:var(--ac)}
+.selbtn.main{background:var(--ac);color:#04202e;border-color:var(--ac);font-weight:600}
+
+/* ---------- плейлисти: режими перегляду, закріплення, порядок ---------- */
+.pls-tools{display:flex;align-items:center;gap:10px}
+.seg{display:flex;background:var(--pn);border:1px solid var(--ln);border-radius:10px;padding:2px}
+.seg button{width:36px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--mut)}
+.seg button:hover{color:var(--tx)}
+.seg button.on{background:var(--hv);color:var(--ac)}
+.pls-tools .ghost.on{color:var(--ac);background:var(--hv)}
+.pl-hint{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 32px 12px;padding:8px 8px 8px 14px;border-radius:12px;background:var(--hv);border:1px dashed var(--ac);color:var(--mut);font-size:14px}
+.pl-card{position:relative;cursor:pointer}
+.pl-info{display:flex;flex-direction:column;gap:2px;min-width:0}
+.pl-info .pl-cnt{margin-top:0;display:flex;align-items:center;gap:4px}
+.pin-i{width:13px;height:13px;color:var(--ac);fill:var(--ac)}
+.pl-more,.pl-grip{position:absolute;top:14px;width:34px;height:34px;border-radius:50%;background:rgba(8,12,18,.62);color:#e8edf3;align-items:center;justify-content:center;z-index:2}
+.pl-more{right:14px;display:flex}
+.pl-more:hover,.pl-grip:hover{background:rgba(8,12,18,.85)}
+.pl-grip{left:14px;display:none;touch-action:none;cursor:grab}
+.pl-grid.reorder .pl-grip{display:flex}
+.pl-grid.reorder .pl-more,.pl-grid.reorder .pl-card.new{display:none}
+.pl-grid.reorder .pl-card{cursor:default}
+.pl-card.dragging{background:var(--hv);box-shadow:0 12px 30px rgba(0,0,0,.55);outline:2px solid var(--ac);z-index:3}
+.pl-card.dragging .pl-grip{cursor:grabbing}
+.pl-grid.v-small{grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
+.v-small .pl-card{padding:6px;gap:6px}
+.v-small .pl-name{font-size:13.5px}
+.v-small .pl-cnt{font-size:12px}
+.v-small .pl-more,.v-small .pl-grip{top:10px;width:28px;height:28px}
+.v-small .pl-more{right:10px}
+.v-small .pl-grip{left:10px}
+.v-small .pl-more .ic,.v-small .pl-grip .ic{width:16px;height:16px}
+.pl-grid.v-list{display:flex;flex-direction:column;gap:2px}
+.v-list .pl-card{flex-direction:row;align-items:center;gap:12px;padding:8px 10px}
+.v-list .pl-cv{width:48px;height:48px;aspect-ratio:auto;flex:none;border-radius:8px}
+.v-list .pl-info{flex:1}
+.v-list .pl-more,.v-list .pl-grip{position:static;background:none;flex:none}
+.v-list .pl-more:hover,.v-list .pl-grip:hover{background:var(--hv)}
+
+/* ---------- вікно «Додати пісні» ---------- */
+.search.sm{max-width:none;margin-bottom:6px}
+.sp-all{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--ln);cursor:pointer;font-weight:500}
+.sp-all small{margin-left:auto;color:var(--mut);font-weight:400}
+.song-pick{list-style:none;padding:0;margin:0}
+.song-pick label{display:flex;align-items:center;gap:12px;padding:8px 4px;border-radius:8px;cursor:pointer}
+.song-pick label:hover{background:var(--hv)}
+.song-pick input,.sp-all input{width:18px;height:18px;accent-color:var(--ac);flex:none}
+.song-pick .cv{width:40px;height:40px;border-radius:6px;background-size:cover;flex:none}
+.song-pick .x{min-width:0;display:flex;flex-direction:column}
+.song-pick .t{font-size:15px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.song-pick .a{font-size:13px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sp-empty{padding:18px;text-align:center;color:var(--mut)}
+.pick-btns button{width:100%;display:flex;align-items:center;gap:12px;padding:12px 8px;border-radius:8px;text-align:left}
+.pick-btns button:hover{background:var(--hv)}
+.pick-btns small{margin-left:auto;color:var(--mut)}
+@media(max-width:860px){
+  .selbar{margin:0 14px 8px}
+  .pls-h{padding:4px 14px 12px;gap:8px}
+  .pls-h h3{display:none}
+  .pls-tools{width:100%;justify-content:space-between}
+  .pl-hint{margin:0 14px 10px}
+  .pl-grid{padding:0 14px 16px}
+  .pl-grid.v-big{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .pl-grid.v-small{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .pl-grid.v-list{padding:0 8px 16px}
+}
+
+.pl-cv.empty{display:flex;align-items:center;justify-content:center;color:var(--mut)}
+.pl-cv.empty .ic{width:34%;height:34%;opacity:.55}
+
+/* тост не перекриває вікна й нижні шторки */
+body:has(.mdl) .toast,body:has(.pop-wrap.sheet) .toast{bottom:auto;top:max(12px,env(safe-area-inset-top));z-index:200}
+@media(max-width:860px){
+  .qh{gap:6px}
+  .tabs button{padding:8px 9px}
+  .sel-n{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .selbtn{padding:0 11px}
+}

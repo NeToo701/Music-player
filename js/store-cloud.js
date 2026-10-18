@@ -455,6 +455,7 @@
       const col = FS.collection(db, 'users', user.uid, 'playlists');
       const data = { name: p.name, trackIds: p.trackIds || [] };
       if (p.kind) data.kind = p.kind;
+      if (typeof p.pinned === 'boolean') data.pinned = p.pinned;
       if (p.id) {
         await FS.setDoc(FS.doc(db, 'users', user.uid, 'playlists', p.id), data, { merge: true });
         return p.id;
@@ -470,6 +471,10 @@
 
     async saveOrder(ids) {
       await FS.setDoc(FS.doc(db, 'users', user.uid), { order: ids }, { merge: true });
+    },
+
+    async savePlaylistOrder(ids) {
+      await FS.setDoc(FS.doc(db, 'users', user.uid), { plOrder: ids }, { merge: true });
     },
 
     // Записує прослуховування в лічильники періодів (тиждень, місяць, рік).

@@ -39,7 +39,7 @@
 
   let tracks = [];          // у порядку додавання: нові першими
   let playlists = [];
-  let settings = { order: [] };
+  let settings = { order: [], plOrder: [] };
   let me = null;
   let curId = null;
   let loadedId = null;
@@ -68,6 +68,11 @@
   let lyrShown = null;      // { id, text }
   let lyrRaf = 0;
   let statsCtl = null;
+  let plView = (function () { const v = store('tembr.plview'); return v === 'small' || v === 'list' ? v : 'big'; })();
+  let plReorder = false;    // режим зміни порядку карток плейлистів
+  const sel = new Set();    // вибрані пісні (множинний вибір)
+  let plDragging = false;   // іде перетягування картки плейлиста
+  let lpBlock = false;      // після довгого натискання гасимо наступний клік
 
   const Q = window.Queue.create();
 
@@ -149,9 +154,18 @@
     return playlists.find((p) => p.id === FAV) || { id: FAV, name: 'Улюблені', kind: 'favorites', trackIds: [] };
   }
 
+  // «Улюблені» закріплені зверху за замовчуванням; решту закріплює користувач.
+  const isPinned = (p) => (p.id === FAV ? p.pinned !== false : !!p.pinned);
+
   function plList() {
     const others = playlists.filter((p) => p.id !== FAV).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-    return [favorites()].concat(others);
+    const all = [favorites()].concat(others);
+    const idx = new Map((settings.plOrder || []).map((id, i) => [id, i]));
+    const rank = (p, i) => (idx.has(p.id) ? idx.get(p.id) : (p.id === FAV ? -1 : 100000 + i));
+    return all
+      .map((p, i) => ({ p, g: isPinned(p) ? 0 : 1, r: rank(p, i) }))
+      .sort((a, b) => a.g - b.g || a.r - b.r)
+      .map((x) => x.p);
   }
 
   const plById = (id) => plList().find((p) => p.id === id) || null;
@@ -170,11 +184,11 @@
     const act = t.id === curId;
     const id = esc(t.id);
     const title = esc(t.title || 'Без назви');
-    return '<div class="row' + (act ? ' active' : '') + '" data-id="' + id + '">' +
+    return '<div class="row' + (act ? ' active' : '') + (sel.has(t.id) ? ' sel' : '') + '" data-id="' + id + '">' +
       '<button class="grip" data-grip aria-label="Перетягнути" tabindex="-1"><svg class="ic"><use href="#i-grip"/></svg></button>' +
       '<button class="r-main" data-play-id="' + id + '">' +
       '<span class="n"><span class="eq"><i></i><i></i><i></i></span><b>' + (i + 1) + '</b></span>' +
-      '<span class="cv" style="background:' + coverCss(t) + '"></span>' +
+      '<span class="cv" style="background:' + coverCss(t) + '"><i class="chk"><svg class="ic"><use href="#i-check"/></svg></i></span>' +
       '<span class="x"><span class="t">' + title + '</span><span class="a">' + esc(t.artist || 'Невідомий виконавець') + '</span></span>' +
       '<span class="d">' + (t.duration ? fmt(t.duration) : '—:—') + '</span>' +
       '</button>' +
@@ -190,7 +204,7 @@
 
   function covMosaic(list) {
     const c = list.slice(0, 4);
-    if (!c.length) return '<div class="pl-cv"></div>';
+    if (!c.length) return '<div class="pl-cv empty"><svg class="ic"><use href="#i-music"/></svg></div>';
     if (c.length < 4) return '<div class="pl-cv one"><i style="background:' + coverCss(c[0]) + '"></i></div>';
     return '<div class="pl-cv">' + c.map((t) => '<i style="background:' + coverCss(t) + '"></i>').join('') + '</div>';
   }
@@ -222,19 +236,35 @@
     return 'треків';
   }
 
+  function plCardHtml(p) {
+    const list = plTracks(p);
+    const id = esc(p.id);
+    const pin = isPinned(p);
+    const cv = p.id === FAV
+      ? '<div class="pl-cv fav-cv"><svg class="ic"><use href="#i-heart"/></svg></div>'
+      : covMosaic(list);
+    const name = esc(p.name || 'Без назви');
+    return '<div class="pl-card' + (pin ? ' pinned' : '') + '" data-open-pl="' + id + '" data-pl-id="' + id + '" data-pin="' + (pin ? 1 : 0) + '" tabindex="0" role="button">' +
+      '<button class="pl-grip" data-pl-grip aria-label="Перетягнути" tabindex="-1"><svg class="ic"><use href="#i-grip"/></svg></button>' +
+      cv +
+      '<span class="pl-info"><span class="pl-name">' + name + '</span>' +
+      '<span class="pl-cnt">' + (pin ? '<svg class="ic pin-i" aria-label="Закріплено"><use href="#i-pin"/></svg>' : '') + list.length + ' ' + pluralTr(list.length) + '</span></span>' +
+      '<button class="pl-more" data-pl-more="' + id + '" aria-label="Меню «' + name + '»" aria-haspopup="menu">' + ICON_MORE + '</button></div>';
+  }
+
+  const VIEWS = [['big', 'i-v-big', 'Великі плитки'], ['small', 'i-v-small', 'Малі плитки'], ['list', 'i-v-list', 'Список']];
+
   function renderPlaylists() {
     const host = $('[data-pls]');
-    const cards = plList().map((p) => {
-      const list = plTracks(p);
-      const cv = p.id === FAV
-        ? '<div class="pl-cv fav-cv"><svg class="ic"><use href="#i-heart"/></svg></div>'
-        : covMosaic(list);
-      return '<button class="pl-card" data-open-pl="' + esc(p.id) + '">' + cv +
-        '<span class="pl-name">' + esc(p.name || 'Без назви') + '</span><span class="pl-cnt">' + list.length + ' ' + pluralTr(list.length) + '</span></button>';
-    }).join('');
-    host.innerHTML = '<div class="pls-h"><h3>Плейлисти</h3><button class="up" data-new-pl><svg class="ic"><use href="#i-plus"/></svg><span>Новий плейлист</span></button></div>' +
-      '<div class="pl-grid">' + cards +
-      '<button class="pl-card" data-new-pl><div class="pl-cv new-cv"><svg class="ic"><use href="#i-plus"/></svg></div><span class="pl-name">Створити плейлист</span></button></div>';
+    const cards = plList().map(plCardHtml).join('');
+    host.innerHTML = '<div class="pls-h"><h3>Плейлисти</h3>' +
+      '<div class="pls-tools"><div class="seg" role="group" aria-label="Вигляд">' +
+      VIEWS.map((v) => '<button data-pl-view="' + v[0] + '" class="' + (plView === v[0] ? 'on' : '') + '" aria-label="' + v[2] + '" title="' + v[2] + '" aria-pressed="' + (plView === v[0]) + '"><svg class="ic"><use href="#' + v[1] + '"/></svg></button>').join('') +
+      '</div><button class="ghost alt' + (plReorder ? ' on' : '') + '" data-pl-reorder aria-label="Змінити порядок" title="Змінити порядок"><svg class="ic"><use href="#i-grip"/></svg></button>' +
+      '<button class="up" data-new-pl><svg class="ic"><use href="#i-plus"/></svg><span>Новий плейлист</span></button></div></div>' +
+      (plReorder ? '<div class="pl-hint"><span>Перетягніть картку за значок ⋮⋮. Закріплені лишаються зверху.</span><button class="selbtn main" data-pl-reorder-done>Готово</button></div>' : '') +
+      '<div class="pl-grid v-' + plView + (plReorder ? ' reorder' : '') + '">' + cards +
+      '<div class="pl-card new" data-new-pl tabindex="0" role="button"><div class="pl-cv new-cv"><svg class="ic"><use href="#i-plus"/></svg></div><span class="pl-info"><span class="pl-name">Створити плейлист</span></span></div></div>';
   }
 
   function renderPlaylistDetail() {
@@ -247,7 +277,7 @@
       '<div class="plh-t"><b>' + esc(p.name) + '</b><small>' + plMeta(list) + '</small></div>' +
       '<button class="up" data-pl-play' + (list.length ? '' : ' disabled') + '><svg class="ic"><use href="#i-play"/></svg><span>Відтворити</span></button>' +
       '<button class="ghost alt" data-pl-shuffle aria-label="Перемішати"' + (list.length ? '' : ' disabled') + '><svg class="ic"><use href="#i-shuffle"/></svg></button>' +
-      (p.id === FAV ? '' : '<button class="ghost alt" data-pl-menu aria-label="Меню плейлиста" aria-haspopup="menu">' + ICON_MORE + '</button>');
+      '<button class="ghost alt" data-pl-menu aria-label="Меню плейлиста" aria-haspopup="menu">' + ICON_MORE + '</button>';
     const host = $('[data-list]');
     host.classList.remove('drag-on');
     host.innerHTML = list.length
@@ -259,14 +289,16 @@
     $$('[data-count]').forEach((e) => { e.textContent = tracks.length; });
     if (page === 'library') renderLibrary();
     else if (page === 'playlists') { if (plId) renderPlaylistDetail(); else renderPlaylists(); }
+    updateSelUI();
   }
 
   function setPage(p, id) {
     page = p;
     plId = p === 'playlists' ? (id || null) : null;
+    sel.clear();
+    plReorder = false;
     body.dataset.page = p;
     const detail = p === 'playlists' && !!plId;
-    $('[data-tools]').hidden = p !== 'library';
     $('[data-plh]').hidden = !detail;
     $('[data-list]').hidden = !(p === 'library' || detail);
     $('[data-pls]').hidden = !(p === 'playlists' && !plId);
@@ -1026,22 +1058,111 @@
     }
   }
 
-  async function playlistMenu(anchor) {
-    const p = plById(plId);
-    if (!p || p.id === FAV) return;
-    const act = await window.UI.menu(anchor, [
-      { label: 'Перейменувати', act: 'rename', icon: 'i-edit' },
-      { label: 'Видалити плейлист', act: 'delete', icon: 'i-trash', danger: true }
-    ]);
-    if (act === 'rename') {
+  async function playlistMenu(anchor, pid) {
+    const p = plById(pid || plId);
+    if (!p) return;
+    const own = p.id !== FAV;
+    const overview = page === 'playlists' && !plId;
+    const items = [{ label: 'Додати пісні', act: 'add', icon: 'i-pl-add' }];
+    if (own) items.push({ label: 'Перейменувати', act: 'rename', icon: 'i-edit' });
+    items.push({ label: isPinned(p) ? 'Відкріпити' : 'Закріпити зверху', act: 'pin', icon: 'i-pin' });
+    if (overview) items.push({ label: 'Змінити порядок', act: 'reorder', icon: 'i-grip' });
+    if (own) items.push({ sep: true }, { label: 'Видалити плейлист', act: 'delete', icon: 'i-trash', danger: true });
+    const act = await window.UI.menu(anchor, items);
+    if (act === 'add') addSongsToPlaylist(p.id);
+    else if (act === 'pin') togglePin(p);
+    else if (act === 'reorder') setReorder(true);
+    else if (act === 'rename') {
       const v = await window.UI.prompt({ title: 'Перейменувати плейлист', label: 'Назва плейлиста', value: p.name });
-      if (v && v !== p.name) savePl({ id: p.id, name: v, kind: p.kind }, p.trackIds || []).catch((e) => toast(errText(e)));
+      if (v && v !== p.name) Store.savePlaylist({ id: p.id, name: v, kind: p.kind, trackIds: p.trackIds || [] }).catch((e) => toast(errText(e)));
     } else if (act === 'delete') {
       const ok = await window.UI.confirm({ title: 'Видалити плейлист?', text: 'Плейлист «' + p.name + '» буде видалено. Самі треки залишаться в бібліотеці.', ok: 'Видалити', danger: true });
       if (ok) {
-        try { await Store.deletePlaylist(p.id); setPage('playlists'); toast('Плейлист видалено'); } catch (e) { toast(errText(e)); }
+        try { await Store.deletePlaylist(p.id); if (plId === p.id) setPage('playlists'); toast('Плейлист видалено'); } catch (e) { toast(errText(e)); }
       }
     }
+  }
+
+  function togglePin(p) {
+    const val = !isPinned(p);
+    Store.savePlaylist({ id: p.id, name: p.name, kind: p.kind, trackIds: p.trackIds || [], pinned: val })
+      .then(() => toast(val ? 'Закріплено зверху' : 'Відкріплено'), (e) => toast(errText(e)));
+  }
+
+  function setPlView(v) {
+    plView = v;
+    store('tembr.plview', v);
+    if (page === 'playlists' && !plId) renderPlaylists();
+  }
+
+  function setReorder(on) {
+    plReorder = !!on;
+    if (page === 'playlists' && !plId) renderPlaylists();
+  }
+
+  // Вікно «Додати пісні»: список треків бібліотеки, яких ще немає в плейлисті, з прапорцями.
+  function addSongsToPlaylist(pid) {
+    const p0 = plById(pid);
+    if (!p0) return;
+    const have = new Set(p0.trackIds || []);
+    const avail = sortedTracks().filter((t) => !have.has(t.id));
+    if (!avail.length) { toast(tracks.length ? 'Усі треки вже є в цьому плейлисті' : 'У бібліотеці ще немає треків'); return; }
+    const chosen = new Set();
+    let q = '';
+    const m = window.UI.modal({
+      title: 'Додати пісні: ' + p0.name,
+      wide: true,
+      body: '<label class="search sm"><svg class="ic"><use href="#i-search"/></svg><input type="search" data-sp-q placeholder="Пошук" autocomplete="off"></label>' +
+        '<label class="sp-all"><input type="checkbox" data-sp-all><span>Вибрати все</span><small data-sp-n></small></label>' +
+        '<ul class="song-pick" data-sp></ul>',
+      actions: []
+    });
+    const host = $('[data-sp]', m.body);
+    const allBox = $('[data-sp-all]', m.body);
+    const visible = () => {
+      const k = q.trim().toLowerCase();
+      return k ? avail.filter((t) => ((t.title || '') + ' ' + (t.artist || '')).toLowerCase().includes(k)) : avail;
+    };
+    const actions = () => {
+      const n = chosen.size;
+      m.setActions([
+        { label: 'Скасувати', kind: 'ghost', onClick: (mm) => mm.close() },
+        { label: n ? 'Додати ' + n : 'Додати', kind: 'primary', disabled: !n, onClick: async (mm) => {
+          const cur0 = plById(pid);
+          if (!cur0) { mm.close(); return; }
+          const add = avail.filter((t) => chosen.has(t.id)).map((t) => t.id);
+          try {
+            await Store.savePlaylist({ id: cur0.id, name: cur0.name, kind: cur0.kind, trackIds: (cur0.trackIds || []).concat(add.filter((x) => (cur0.trackIds || []).indexOf(x) < 0)) });
+            mm.close();
+            toast('Додано ' + add.length + ' ' + pluralTr(add.length) + ' до «' + cur0.name + '»');
+          } catch (e) { toast(errText(e)); }
+        } }
+      ]);
+    };
+    const draw = () => {
+      const vis = visible();
+      host.innerHTML = vis.length ? vis.map((t) =>
+        '<li><label><input type="checkbox" data-t="' + esc(t.id) + '"' + (chosen.has(t.id) ? ' checked' : '') + '>' +
+        '<span class="cv" style="background:' + coverCss(t) + '"></span>' +
+        '<span class="x"><span class="t">' + esc(t.title || 'Без назви') + '</span><span class="a">' + esc(t.artist || 'Невідомий виконавець') + '</span></span></label></li>').join('')
+        : '<li class="sp-empty">Нічого не знайдено</li>';
+      allBox.checked = vis.length > 0 && vis.every((t) => chosen.has(t.id));
+      allBox.disabled = !vis.length;
+      $('[data-sp-n]', m.body).textContent = chosen.size ? 'вибрано ' + chosen.size : '';
+      actions();
+    };
+    host.addEventListener('change', (e) => {
+      const id = e.target.dataset.t;
+      if (!id) return;
+      if (e.target.checked) chosen.add(id); else chosen.delete(id);
+      draw();
+    });
+    allBox.addEventListener('change', () => {
+      visible().forEach((t) => { if (allBox.checked) chosen.add(t.id); else chosen.delete(t.id); });
+      draw();
+    });
+    $('[data-sp-q]', m.body).addEventListener('input', (e) => { q = e.target.value; draw(); });
+    draw();
   }
 
   function playPlaylist(doShuffle) {
@@ -1177,7 +1298,7 @@
       sharedChecked = false;
       queueReady = false;
       playlists = [];
-      settings = { order: [] };
+      settings = { order: [], plOrder: [] };
       lyrShown = null;
       openDrawer(false);
       setPage('library');
@@ -1234,8 +1355,9 @@
   }
 
   function onSettings(s) {
-    settings = { order: Array.isArray(s.order) ? s.order : [] };
+    settings = { order: Array.isArray(s.order) ? s.order : [], plOrder: Array.isArray(s.plOrder) ? s.plOrder : [] };
     if (page === 'library' && sortMode === 'custom') render();
+    else if (page === 'playlists' && !plId && !plDragging) render();
   }
 
   function onError(msg) {
@@ -1256,6 +1378,219 @@
     } catch (e) {
       msg.textContent = errText(e);
     }
+  }
+
+  // ---------- множинний вибір пісень ----------
+
+  function listIds() { return $$('[data-list] .row').map((r) => r.dataset.id); }
+
+  // Вибрані треки в порядку, у якому вони показані в списку.
+  function selIds() {
+    const shown = listIds().filter((id) => sel.has(id));
+    const rest = Array.from(sel).filter((id) => shown.indexOf(id) < 0 && byId(id));
+    return shown.concat(rest);
+  }
+
+  function updateSelUI() {
+    Array.from(sel).forEach((id) => { if (!byId(id)) sel.delete(id); });
+    const inList = page === 'library' || (page === 'playlists' && !!plId);
+    const on = inList && sel.size > 0;
+    if (!on && sel.size) sel.clear();
+    const list = $('[data-list]');
+    list.classList.toggle('selmode', on);
+    $$('.row', list).forEach((r) => r.classList.toggle('sel', sel.has(r.dataset.id)));
+    $('[data-selbar]').hidden = !on;
+    $('[data-sel-count]').textContent = sel.size;
+    $('[data-tools]').hidden = page !== 'library' || on;
+    const ids = listIds();
+    const allOn = ids.length && ids.every((id) => sel.has(id));
+    $('[data-sel-all]').textContent = mq.matches ? (allOn ? 'Зняти' : 'Усі') : (allOn ? 'Зняти вибір' : 'Вибрати все');
+  }
+
+  function toggleSel(id) {
+    if (!byId(id)) return;
+    if (sel.has(id)) sel.delete(id); else sel.add(id);
+    updateSelUI();
+  }
+
+  function clearSel() {
+    if (!sel.size) return;
+    sel.clear();
+    updateSelUI();
+  }
+
+  function selectAll() {
+    const ids = listIds();
+    if (ids.length && ids.every((id) => sel.has(id))) sel.clear();
+    else ids.forEach((id) => sel.add(id));
+    updateSelUI();
+  }
+
+  async function selMenu(anchor) {
+    if (!sel.size) return;
+    const inPl = page === 'playlists' && plId;
+    const items = [{ label: 'Додати до плейлиста', act: 'pl', icon: 'i-pl-add' }];
+    if (inPl) items.push({ label: 'Прибрати з плейлиста', act: 'unpl', icon: 'i-pl-rm' });
+    items.push({ sep: true }, { label: 'Видалити з бібліотеки', act: 'del', icon: 'i-trash', danger: true });
+    const act = await window.UI.menu(anchor, items);
+    if (act === 'pl') pickPlaylistMulti(selIds());
+    else if (act === 'unpl') {
+      const p = plById(plId);
+      if (!p) return;
+      const drop = new Set(selIds());
+      Store.savePlaylist({ id: p.id, name: p.name, kind: p.kind, trackIds: (p.trackIds || []).filter((x) => !drop.has(x)) })
+        .then(() => { clearSel(); toast('Прибрано з плейлиста: ' + drop.size); }, (e) => toast(errText(e)));
+    } else if (act === 'del') removeMany(selIds());
+  }
+
+  async function addManyTo(p, ids) {
+    const have = new Set(p.trackIds || []);
+    const add = ids.filter((x) => !have.has(x));
+    if (add.length) {
+      await Store.savePlaylist({ id: p.id, name: p.name, kind: p.kind, trackIds: (p.trackIds || []).concat(add) });
+    }
+    return add.length;
+  }
+
+  function pickPlaylistMulti(ids) {
+    if (!ids.length) return;
+    const m = window.UI.modal({
+      title: 'Додати до плейлиста: ' + ids.length + ' ' + pluralTr(ids.length),
+      body: '<ul class="pl-pick pick-btns" data-pick></ul>',
+      actions: []
+    });
+    const host = $('[data-pick]', m.body);
+    host.innerHTML = plList().map((p) =>
+      '<li><button data-pl="' + esc(p.id) + '"><span>' + esc(p.name) + '</span><small>' + (p.trackIds || []).length + '</small></button></li>').join('');
+    host.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-pl]');
+      const p = b && plById(b.dataset.pl);
+      if (!p) return;
+      try {
+        const n = await addManyTo(p, ids);
+        m.close();
+        clearSel();
+        toast(n ? 'Додано ' + n + ' ' + pluralTr(n) + ' до «' + p.name + '»' : 'Ці треки вже є в плейлисті «' + p.name + '»');
+      } catch (err) { toast(errText(err)); }
+    });
+    m.setActions([
+      { label: 'Новий плейлист', kind: 'ghost', onClick: async (mm) => {
+        const name = await window.UI.prompt({ title: 'Новий плейлист', label: 'Назва плейлиста', ok: 'Створити' });
+        if (!name) return;
+        try {
+          await Store.savePlaylist({ name, trackIds: ids });
+          mm.close();
+          clearSel();
+          toast('Плейлист «' + name + '» створено, додано ' + ids.length + ' ' + pluralTr(ids.length));
+        } catch (err) { toast(errText(err)); }
+      } },
+      { label: 'Скасувати', kind: 'ghost', onClick: (mm) => mm.close() }
+    ]);
+  }
+
+  async function removeMany(ids) {
+    const list = ids.map(byId).filter(Boolean);
+    if (!list.length) return;
+    const ok = await window.UI.confirm({
+      title: 'Видалити ' + list.length + ' ' + pluralTr(list.length) + '?',
+      text: 'Вибрані треки буде видалено з бібліотеки й з Google Диска. Цю дію не можна скасувати.',
+      ok: 'Видалити',
+      danger: true
+    });
+    if (!ok) return;
+    const gone = new Set();
+    let failed = 0;
+    let lastErr = null;
+    for (let i = 0; i < list.length; i++) {
+      toast('Видалення ' + (i + 1) + ' з ' + list.length + '…');
+      try { await Store.removeTrack(list[i]); gone.add(list[i].id); } catch (e) { failed++; lastErr = e; if (/popup|no_token|access_denied/i.test(String((e && e.message) || ''))) break; }
+    }
+    const owners = playlists.filter((p) => (p.trackIds || []).some((x) => gone.has(x)));
+    await Promise.all(owners.map((p) => Store.savePlaylist({ id: p.id, name: p.name, kind: p.kind, trackIds: p.trackIds.filter((x) => !gone.has(x)) }).catch(() => {})));
+    sel.clear();
+    updateSelUI();
+    toast(failed ? 'Видалено ' + gone.size + ', не вдалося: ' + (list.length - gone.size) + '. ' + errText(lastErr) : 'Видалено: ' + gone.size);
+  }
+
+  // Довге натискання: pointerdown на елементі `selector` (крім `ignore`) без руху понад 10 px.
+  function longPress(host, selector, ignore, cb) {
+    let tm = 0;
+    let sx = 0;
+    let sy = 0;
+    const stop = () => { clearTimeout(tm); tm = 0; };
+    host.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      const el = e.target.closest(selector);
+      if (!el || (ignore && e.target.closest(ignore))) return;
+      stop();
+      sx = e.clientX;
+      sy = e.clientY;
+      tm = setTimeout(() => {
+        tm = 0;
+        lpBlock = true;
+        if (navigator.vibrate) { try { navigator.vibrate(18); } catch (x) { /* не критично */ } }
+        cb(el);
+      }, 480);
+    });
+    host.addEventListener('pointermove', (e) => {
+      if (tm && (Math.abs(e.clientX - sx) > 10 || Math.abs(e.clientY - sy) > 10)) stop();
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach((n) => host.addEventListener(n, () => {
+      stop();
+      if (lpBlock) setTimeout(() => { lpBlock = false; }, 150);
+    }));
+    host.addEventListener('contextmenu', (e) => { if (e.target.closest(selector)) e.preventDefault(); });
+  }
+
+  function bindSelection() {
+    longPress($('[data-list]'), '.row .r-main', null, (el) => {
+      if (page === 'library' || (page === 'playlists' && plId)) toggleSel(el.closest('.row').dataset.id);
+    });
+    longPress($('[data-pls]'), '.pl-card[data-pl-id]', '[data-pl-more],[data-pl-grip]', () => {
+      if (!plReorder) setReorder(true);
+    });
+    $('[data-pls]').addEventListener('keydown', (e) => {
+      if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('pl-card')) {
+        e.preventDefault();
+        e.target.click();
+      }
+    });
+  }
+
+  // ---------- перетягування карток плейлистів ----------
+
+  function bindPlDrag() {
+    const host = $('[data-pls]');
+    host.addEventListener('pointerdown', (e) => {
+      const g = e.target.closest('[data-pl-grip]');
+      if (!g || !plReorder) return;
+      const card = g.closest('.pl-card');
+      const grid = card.parentElement;
+      e.preventDefault();
+      plDragging = true;
+      card.classList.add('dragging');
+      const move = (ev) => {
+        const r = host.getBoundingClientRect();
+        if (ev.clientY < r.top + 40) host.scrollTop -= 14; else if (ev.clientY > r.bottom - 40) host.scrollTop += 14;
+        const over = document.elementFromPoint(ev.clientX, ev.clientY);
+        const target = over && over.closest('.pl-card[data-pl-id]');
+        if (!target || target === card || target.dataset.pin !== card.dataset.pin || target.parentElement !== grid) return;
+        const kids = Array.from(grid.children);
+        if (kids.indexOf(card) < kids.indexOf(target)) target.after(card); else target.before(card);
+      };
+      const end = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', end);
+        window.removeEventListener('pointercancel', end);
+        card.classList.remove('dragging');
+        const ids = $$('.pl-card[data-pl-id]', grid).map((c) => c.dataset.plId);
+        settings.plOrder = ids;
+        Store.savePlaylistOrder(ids).catch((err) => toast(errText(err))).finally(() => { plDragging = false; });
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', end);
+      window.addEventListener('pointercancel', end);
+    });
   }
 
   // ---------- перетягування для власного порядку ----------
@@ -1345,13 +1680,36 @@
 
   // ---------- події ----------
 
+  // Клік, який слідує за довгим натисканням, ігноруємо (інакше трек одразу заграв би).
+  // Будь-яке нове натискання скидає цей захист.
+  document.addEventListener('pointerdown', () => { lpBlock = false; }, true);
+  document.addEventListener('click', (e) => {
+    if (!lpBlock) return;
+    lpBlock = false;
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
+
   document.addEventListener('click', (e) => {
     const t = e.target;
-    let el = t.closest('[data-more]');
+    let el = t.closest('[data-sel-clear]');
+    if (el) { clearSel(); return; }
+    if (t.closest('[data-sel-all]')) { selectAll(); return; }
+    el = t.closest('[data-sel-menu]');
+    if (el) { selMenu(el); return; }
+    el = t.closest('[data-pl-more]');
+    if (el) { playlistMenu(el, el.dataset.plMore); return; }
+    el = t.closest('[data-pl-view]');
+    if (el) { setPlView(el.dataset.plView); return; }
+    if (t.closest('[data-pl-reorder-done]')) { setReorder(false); return; }
+    if (t.closest('[data-pl-reorder]')) { setReorder(!plReorder); return; }
+    if (t.closest('[data-pl-grip]')) return;
+    el = t.closest('[data-more]');
     if (el) { openRowMenu(el.dataset.more, el); return; }
     el = t.closest('[data-play-id]');
     if (el) {
       const id = el.dataset.playId;
+      if (sel.size || e.ctrlKey || e.metaKey) { toggleSel(id); return; }
       if (id === curId && loadedId === curId) { togglePlay(); return; }
       if (page === 'playlists' && plId) {
         const p = plById(plId);
@@ -1364,13 +1722,13 @@
     el = t.closest('[data-nav]');
     if (el) { setPage(el.dataset.nav); return; }
     el = t.closest('[data-open-pl]');
-    if (el) { setPage('playlists', el.dataset.openPl); return; }
+    if (el) { if (!plReorder) setPage('playlists', el.dataset.openPl); return; }
     if (t.closest('[data-new-pl]')) { newPlaylist(); return; }
     if (t.closest('[data-pl-back]')) { setPage('playlists'); return; }
     if (t.closest('[data-pl-play]')) { playPlaylist(false); return; }
     if (t.closest('[data-pl-shuffle]')) { playPlaylist(true); return; }
     el = t.closest('[data-pl-menu]');
-    if (el) { playlistMenu(el); return; }
+    if (el) { playlistMenu(el, plId); return; }
     if (t.closest('[data-upload]')) { window.Importer.open(); return; }
     if (t.closest('[data-reset-queue]')) { resetQueue(); return; }
     if (t.closest('[data-fav]')) { toggleFav(curId); return; }
@@ -1394,6 +1752,8 @@
     if (/INPUT|TEXTAREA|SELECT/.test(tag) || e.target.isContentEditable) return;
     if (e.key === 'Escape') {
       if (!$('#drawer').hidden) { openDrawer(false); return; }
+      if (sel.size) { clearSel(); return; }
+      if (plReorder) { setReorder(false); return; }
       if (mq.matches && body.dataset.view === 'expanded') setView('compact');
       return;
     }
@@ -1487,6 +1847,8 @@
   applyView();
   bindSession();
   bindDrag();
+  bindSelection();
+  bindPlDrag();
   bindSwipe();
   setPage('library');
   if (store('tembr.lyr') === '1') setLyrOn(true);

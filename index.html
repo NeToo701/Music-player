@@ -44,6 +44,11 @@
   <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
   <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 014.5 5H9l2 2.5h8.5A1.5 1.5 0 0121 9v9.5a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 18.5z"/></symbol>
   <symbol id="i-all" viewBox="0 0 24 24"><path d="M5 5h14M5 12h14M5 19h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" stroke-width="3"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 4h6l-1 6 3 3H7l3-3zM12 13v7"/></symbol>
+  <symbol id="i-v-big" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></symbol>
+  <symbol id="i-v-small" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="4.5" height="4.5" rx="1"/><rect x="9.75" y="3.5" width="4.5" height="4.5" rx="1"/><rect x="16" y="3.5" width="4.5" height="4.5" rx="1"/><rect x="3.5" y="9.75" width="4.5" height="4.5" rx="1"/><rect x="9.75" y="9.75" width="4.5" height="4.5" rx="1"/><rect x="16" y="9.75" width="4.5" height="4.5" rx="1"/><rect x="3.5" y="16" width="4.5" height="4.5" rx="1"/><rect x="9.75" y="16" width="4.5" height="4.5" rx="1"/><rect x="16" y="16" width="4.5" height="4.5" rx="1"/></symbol>
+  <symbol id="i-v-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r=".6"/><circle cx="4.5" cy="12" r=".6"/><circle cx="4.5" cy="18" r=".6"/></symbol>
   <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 4H5v16h4M16 8l4 4-4 4M20 12H9"/></symbol>
 </svg>
 
@@ -121,6 +126,12 @@
     </div>
     <div class="upl" id="upl" hidden><div class="upl-t"></div><div class="upl-b"><i></i></div></div>
     <div class="plh" data-plh hidden></div>
+    <div class="selbar" data-selbar hidden>
+      <button class="ghost" data-sel-clear aria-label="Скасувати вибір"><svg class="ic"><use href="#i-close"/></svg></button>
+      <b class="sel-n"><span data-sel-count>0</span> <span>вибрано</span></b>
+      <button class="selbtn" data-sel-all>Вибрати все</button>
+      <button class="selbtn main" data-sel-menu aria-haspopup="menu"><svg class="ic"><use href="#i-more"/></svg><span>Параметри</span></button>
+    </div>
     <div class="list" data-list></div>
     <div class="pls" data-pls hidden></div>
     <div class="stp" data-stats hidden></div>

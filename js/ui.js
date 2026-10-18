@@ -49,6 +49,7 @@ window.UI = (function () {
         list.forEach((a) => {
           const b = el('button', 'mdl-btn ' + (a.kind || ''), esc(a.label));
           b.type = 'button';
+          if (a.disabled) b.disabled = true;
           b.addEventListener('click', () => a.onClick && a.onClick(api, b));
           foot.appendChild(b);
         });
