@@ -12,7 +12,7 @@
   const SCOPE = 'openid email profile https://www.googleapis.com/auth/drive.file';
   const API = 'https://www.googleapis.com/drive/v3/';
   const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
-  const CACHE_LIMIT = 6;
+  const CACHE_LIMIT = 8;
 
   const MIME = {
     mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', flac: 'audio/flac',

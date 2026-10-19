@@ -71,10 +71,29 @@
   let plView = (function () { const v = store('tembr.plview'); return v === 'small' || v === 'list' ? v : 'big'; })();
   let plReorder = false;    // режим зміни порядку карток плейлистів
   const sel = new Set();    // вибрані пісні (множинний вибір)
+  let advUntil = 0;         // до цього часу триває автоперемикання треку
+  let wdTimer = 0;          // сторожовий таймер автоперемикання
   let plDragging = false;   // іде перетягування картки плейлиста
   let lpBlock = false;      // після довгого натискання гасимо наступний клік
 
   const Q = window.Queue.create();
+
+  // ---------- журнал відтворення (для діагностики у фоні) ----------
+
+  const LOGKEY = 'tembr.log';
+  let logBuf = [];
+  try { logBuf = JSON.parse(localStorage.getItem(LOGKEY) || '[]'); if (!Array.isArray(logBuf)) logBuf = []; } catch (e) { logBuf = []; }
+
+  function plog(msg) {
+    const d = new Date();
+    const p = (n, l) => String(n).padStart(l || 2, '0');
+    logBuf.push(p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + '.' + p(d.getMilliseconds(), 3) + ' ' +
+      (document.visibilityState === 'hidden' ? '[фон] ' : '') + msg);
+    if (logBuf.length > 150) logBuf = logBuf.slice(-150);
+    try { localStorage.setItem(LOGKEY, JSON.stringify(logBuf)); } catch (e) { /* не критично */ }
+  }
+
+  const tname = (id) => { const t = id && tracks.find((x) => x.id === id); return t ? '«' + (t.title || '?') + '»' : String(id); };
 
   // ---------- допоміжні ----------
 
@@ -348,7 +367,9 @@
     $$('[data-play]').forEach((b) => b.setAttribute('aria-label', playing ? 'Пауза' : 'Відтворити'));
     const t = cur();
     document.title = playing && t ? (t.title || 'Тембр') + ' — Тембр' : 'Тембр';
-    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
+    // Під час автоперемикання на наступний трек не показуємо системі «паузу»: це може скинути сеанс.
+    const keep = !playing && Date.now() < advUntil;
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = (playing || keep) ? 'playing' : 'paused';
     lyrLoopSync();
   }
 
@@ -516,15 +537,27 @@
 
   const isStreamUrl = (u) => String(u || '').indexOf('/__stream/') >= 0;
 
-  function startPlay() {
+  function startPlay(attempt) {
     if (!curId) return;
-    const p = audio.play();
+    const a = audio;
+    const n = attempt || 1;
+    const p = a.play();
+    if (p && p.then) p.then(() => plog('play() ок: ' + tname(curId) + (n > 1 ? ' (спроба ' + n + ')' : '')), () => {});
     if (p && p.catch) {
       p.catch((err) => {
-        playing = false;
-        setPlayState();
+        plog('play() відхилено: ' + (err && err.name) + ' ' + ((err && err.message) || '') + ' [' + tname(curId) + ', спроба ' + n + ']');
         // AbortError: трек змінили; NotSupportedError: про це повідомить подія error самого елемента.
-        if (!err || (err.name !== 'AbortError' && err.name !== 'NotSupportedError')) toast('Не вдалося почати відтворення. Натисніть ▶ ще раз.');
+        if (err && (err.name === 'AbortError' || err.name === 'NotSupportedError')) { playing = false; setPlayState(); return; }
+        // У фоні браузер іноді відхиляє перший виклик: пробуємо ще.
+        if (n < 4 && a === audio && !a.ended) {
+          setTimeout(() => { if (a === audio && a.paused && curAuto) startPlay(n + 1); }, 350 * n);
+          return;
+        }
+        playing = false;
+        advUntil = 0;
+        setPlayState();
+        if (document.visibilityState === 'hidden') resumeHint = true;
+        else toast('Не вдалося почати відтворення. Натисніть ▶ ще раз.');
       });
     }
   }
@@ -540,6 +573,7 @@
     if (!t) return;
     const tok = ++loadTok;
     pfTok++;
+    plog('завантаження ' + tname(id) + ' (autoplay=' + !!autoplay + ', у запасі: ' + (spareId === id ? 'так' : 'ні') + ', на пристрої: ' + (Store.isCached && Store.isCached(id) ? 'так' : 'ні') + ')');
     audio.pause();
     playing = false;
     loadedId = null;
@@ -587,6 +621,7 @@
     } catch (e) {
       if (tok !== loadTok) return;
       setLoading(false);
+      plog('getAudioUrl помилка: ' + String((e && e.message) || e));
       if (document.visibilityState === 'hidden' || /no_token|popup/i.test(String((e && e.message) || ''))) resumeHint = true;
       if (document.visibilityState !== 'hidden') toast(errText(e));
       return;
@@ -616,7 +651,7 @@
       spare.src = url;
       spare.load();
       spareId = n.id;
-    } catch (e) { /* без підвантаження трек просто завантажиться при перемиканні */ }
+    } catch (e) { plog('підвантаження наступного не вдалось: ' + String((e && e.message) || e)); }
   }
 
   // ---------- завантаження наперед ----------
@@ -626,10 +661,8 @@
   let warmTok = 0;
   let warmFor = null;      // для якого поточного треку вже запущено завантаження наперед
 
-  function aheadCount() {
-    const c = navigator.connection;
-    return c && c.saveData ? 1 : 3;
-  }
+  // Завжди 4 наперед: менша кількість (наприклад, через «Заощадження трафіку») означала б зупинку черги у фоні.
+  const aheadCount = () => 4;
 
   async function warmAhead() {
     const tk = ++warmTok;
@@ -640,14 +673,16 @@
       const t = byId(ids[k]);
       if (!t) continue;
       try {
+        const cached = Store.isCached(t.id);
         const url = await Store.getAudioUrl(t, null, { silent: true, blob: true });
         if (tk !== warmTok) return;
+        if (!cached) plog('завантажено наперед: ' + tname(t.id));
         // Якщо цей трек уже стоїть у запасному елементі як потік, підміняємо його на локальну копію.
         if (spareId === t.id && spare.getAttribute('src') !== url) {
           spare.src = url;
           spare.load();
         }
-      } catch (e) { return; }   // без токена чи мережі далі не йдемо
+      } catch (e) { plog('завантаження наперед зупинилось: ' + String((e && e.message) || e)); return; }   // без токена чи мережі далі не йдемо
     }
   }
 
@@ -717,7 +752,10 @@
     a.addEventListener('canplay', ready);
     a.addEventListener('playing', ready);
     a.addEventListener('ended', () => { if (a === audio) onEnded(); });
-    a.addEventListener('error', () => onAudioError(a));
+    a.addEventListener('error', () => { plog('помилка елемента ' + (a === audio ? 'грає' : 'запас') + ': код ' + (a.error && a.error.code) + ' ' + ((a.error && a.error.message) || '')); onAudioError(a); });
+    a.addEventListener('stalled', () => { if (a === audio) plog('stalled'); });
+    a.addEventListener('waiting', () => { if (a === audio) plog('waiting (буферизація)'); });
+    a.addEventListener('playing', () => { if (a === audio) { advUntil = 0; plog('playing'); } });
     return a;
   }
 
@@ -738,7 +776,10 @@
   }
 
   function onEnded() {
+    plog('кінець треку ' + tname(curId) + ' (' + Math.round(pos) + '/' + Math.round(dur) + ' с)');
     flushStats(false);
+    advUntil = Date.now() + 6000;
+    setTimeout(setPlayState, 6200);
     if (repeat === 'one') {
       trReset(curId);
       audio.currentTime = 0;
@@ -749,12 +790,35 @@
     if (id) {
       saveQueue();
       load(id, true);
+      watchdog(id);
     } else {
+      plog('черга закінчилась');
       pausePlay();
       pos = 0;
       audio.currentTime = 0;
       tick();
     }
+  }
+
+  // Якщо після автоперемикання трек так і не заграв (у фоні таке бувало), пробуємо ще раз іншим шляхом.
+  function watchdog(id) {
+    clearTimeout(wdTimer);
+    wdTimer = setTimeout(() => {
+      if (curId !== id || playing) return;
+      plog('сторож: ' + tname(id) + ' не грає через 4 с (loadedId=' + (loadedId === id ? 'так' : 'ні') + ', paused=' + audio.paused + ', readyState=' + audio.readyState + ')');
+      if (loadedId === id) {
+        startPlay();
+        wdTimer = setTimeout(() => {
+          if (curId !== id || playing) return;
+          plog('сторож: друга спроба, завантажуємо трек заново');
+          spareId = null;
+          load(id, true);
+        }, 3000);
+      } else {
+        spareId = null;
+        load(id, true);
+      }
+    }, 4000);
   }
 
   function togglePlay() {
@@ -839,10 +903,16 @@
   function bindSession() {
     if (!('mediaSession' in navigator)) return;
     const set = (a, f) => { try { navigator.mediaSession.setActionHandler(a, f); } catch (e) { /* не підтримується */ } };
-    set('play', togglePlay);
-    set('pause', togglePlay);
-    set('previoustrack', prev);
-    set('nexttrack', next);
+    // Окремі дії, а не перемикач: інакше зайвий «play» від системи поставив би трек на паузу.
+    set('play', () => {
+      plog('медіасеанс: play');
+      if (!curId) return;
+      if (loadedId !== curId) { load(curId, true); return; }
+      if (!playing) startPlay();
+    });
+    set('pause', () => { plog('медіасеанс: pause'); if (playing) pausePlay(); });
+    set('previoustrack', () => { plog('медіасеанс: previous'); prev(); });
+    set('nexttrack', () => { plog('медіасеанс: next'); next(); });
     set('seekto', (d) => { if (dur && d && d.seekTime != null) seekTo(d.seekTime / dur); });
   }
 
@@ -1380,6 +1450,30 @@
     }
   }
 
+  // ---------- журнал відтворення: показати й скопіювати ----------
+
+  function openLog() {
+    openDrawer(false);
+    const m = window.UI.modal({
+      title: 'Журнал відтворення',
+      wide: true,
+      body: '<p class="mdl-p">Тут записано, що робив плеєр (особливо у фоні). Якщо музика зупиняється з вимкненим екраном, відтворіть це, потім відкрийте журнал, натисніть «Копіювати» й надішліть текст.</p><textarea readonly class="logbox" data-logbox></textarea>',
+      actions: []
+    });
+    const box = $('[data-logbox]', m.body);
+    box.value = logBuf.length ? logBuf.join('\n') : 'Журнал порожній.';
+    box.scrollTop = box.scrollHeight;
+    m.setActions([
+      { label: 'Очистити', kind: 'ghost', onClick: () => { logBuf = []; try { localStorage.removeItem(LOGKEY); } catch (e) { /* не критично */ } box.value = 'Журнал порожній.'; } },
+      { label: 'Копіювати', kind: 'primary', onClick: async () => {
+        try { await navigator.clipboard.writeText(box.value); toast('Скопійовано'); } catch (e) {
+          box.select();
+          try { document.execCommand('copy'); toast('Скопійовано'); } catch (x) { toast('Виділіть текст і скопіюйте вручну'); }
+        }
+      } }
+    ]);
+  }
+
   // ---------- множинний вибір пісень ----------
 
   function listIds() { return $$('[data-list] .row').map((r) => r.dataset.id); }
@@ -1743,6 +1837,7 @@
     if (t.closest('[data-signin]')) { signIn(); return; }
     if (t.closest('[data-signout]')) { openDrawer(false); Store.signOut(); return; }
     if (t.closest('[data-open-stats]')) { openStats(); return; }
+    if (t.closest('[data-open-log]')) { openLog(); return; }
     if (t.closest('#userBtn')) { openDrawer(true); return; }
     if (t.closest('[data-drawer-close]') || t.id === 'drawer') { openDrawer(false); }
   });
@@ -1809,7 +1904,10 @@
   window.addEventListener('beforeunload', (e) => {
     if (uploading) { e.preventDefault(); e.returnValue = ''; }
   });
+  document.addEventListener('freeze', () => plog('сторінку заморожено браузером'));
+  document.addEventListener('resume', () => plog('сторінку розморожено'));
   document.addEventListener('visibilitychange', () => {
+    plog('видимість: ' + document.visibilityState + (playing ? ' (грає)' : ''));
     if (uploading && document.visibilityState === 'visible') keepAwake(true);
     if (document.visibilityState === 'hidden') flushStats(false);
     if (document.visibilityState === 'visible' && resumeHint && curId && loadedId !== curId) {

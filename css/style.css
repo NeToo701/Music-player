@@ -504,3 +504,5 @@ body:has(.mdl) .toast,body:has(.pop-wrap.sheet) .toast{bottom:auto;top:max(12px,
   .sel-n{min-width:0;overflow:hidden;text-overflow:ellipsis}
   .selbtn{padding:0 11px}
 }
+
+.mdl textarea.logbox{height:300px;font:12.5px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre;overflow:auto;margin-top:8px}
